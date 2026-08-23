@@ -1578,12 +1578,34 @@
         }
       });
 
+      let pendingTokenUpdates = new Set();
+      let tokenFlushRAF = null;
+
+      function queueTokenUpdate(modelId) {
+        pendingTokenUpdates.add(modelId);
+        if (!tokenFlushRAF) {
+          tokenFlushRAF = requestAnimationFrame(() => {
+            pendingTokenUpdates.forEach(id => {
+              const streamBox = document.getElementById(`streamBox_${id}`);
+              if (streamBox) {
+                streamBox.textContent = activeStreamingTokens[id] || '';
+                streamBox.scrollTop = streamBox.scrollHeight;
+              } else {
+                requestRenderArenaGrid();
+              }
+            });
+            pendingTokenUpdates.clear();
+            tokenFlushRAF = null;
+          });
+        }
+      }
+
       eventSource.addEventListener('ROUND_START', (e) => {
         activeStreamingTokens = {};
         const d = JSON.parse(e.data);
         activeRound = d.round_number;
         showToast(`Round ${d.round_number} started`, 'info');
-        fetchSessionData(sessionId);
+        debouncedFetchSessionData(sessionId, 50);
       });
 
       eventSource.addEventListener('MODEL_STREAM_START', (e) => {
@@ -1595,20 +1617,14 @@
       eventSource.addEventListener('MODEL_TOKEN_DELTA', (e) => {
         const d = JSON.parse(e.data);
         activeStreamingTokens[d.model_id] = (activeStreamingTokens[d.model_id] || '') + d.delta;
-        const streamBox = document.getElementById(`streamBox_${d.model_id}`);
-        if (streamBox) {
-          streamBox.innerText = activeStreamingTokens[d.model_id];
-          streamBox.scrollTop = streamBox.scrollHeight;
-        } else {
-          requestRenderArenaGrid();
-        }
+        queueTokenUpdate(d.model_id);
       });
 
       eventSource.addEventListener('MODEL_STREAM_END', (e) => {
         const d = JSON.parse(e.data);
         delete activeStreamingTokens[d.model_id];
         requestRenderArenaGrid();
-        fetchSessionData(sessionId);
+        debouncedFetchSessionData(sessionId, 200);
       });
 
       eventSource.addEventListener('MODEL_RETRY_ATTEMPT', (e) => {
@@ -1632,7 +1648,7 @@
         document.getElementById('arbiterThinkingBadge').classList.add('hidden');
         document.getElementById('consensusScoreText').innerText = `${d.arbiter_eval.consensus_score}%`;
         document.getElementById('consensusScoreBar').style.width = `${d.arbiter_eval.consensus_score}%`;
-        fetchSessionData(sessionId);
+        debouncedFetchSessionData(sessionId, 50);
       });
 
       eventSource.addEventListener('MODEL_ERROR_ALERT', (e) => {
@@ -1640,7 +1656,7 @@
         delete activeStreamingTokens[d.model_id];
         showToast(`Model Error: ${d.model_name} - ${d.error_message?.substring(0, 60)}`, 'error');
         requestRenderArenaGrid();
-        fetchSessionData(sessionId);
+        debouncedFetchSessionData(sessionId, 200);
       });
 
       eventSource.addEventListener('MODEL_TIMEOUT_ALERT', (e) => {
@@ -1700,6 +1716,14 @@
         window.latestMarkdown = d.final_markdown_report;
         fetchSessionData(sessionId);
       });
+    }
+
+    let fetchSessionTimer = null;
+    function debouncedFetchSessionData(sessionId, delay = 250) {
+      clearTimeout(fetchSessionTimer);
+      fetchSessionTimer = setTimeout(() => {
+        fetchSessionData(sessionId);
+      }, delay);
     }
 
     async function fetchSessionData(sessionId) {

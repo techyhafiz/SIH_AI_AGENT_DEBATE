@@ -273,14 +273,16 @@ class UniversalAIClient:
                                             err_text = err_val.get("message", str(err_val)) if isinstance(err_val, dict) else str(err_val)
                                             raise RuntimeError(f"Upstream provider error: {err_text}")
 
-                                        delta_obj = chunk_json.get("choices", [{}])[0].get("delta", {})
+                                        choices = chunk_json.get("choices") or []
+                                        delta_obj = choices[0].get("delta", {}) if len(choices) > 0 else {}
                                         delta = delta_obj.get("content") or delta_obj.get("reasoning_content") or delta_obj.get("reasoning") or ""
-                                        if delta:
-                                            if delta.strip().startswith("[error:") or "Upstream error for model" in delta:
-                                                raise RuntimeError(f"Upstream provider error: {delta.strip()}")
+                                        if delta and isinstance(delta, str):
+                                            clean_delta = delta.strip()
+                                            if clean_delta.startswith("[error:") or "Upstream error for model" in clean_delta:
+                                                raise RuntimeError(f"Upstream provider error: {clean_delta}")
                                             yield delta
                                     except json.JSONDecodeError:
-                                        if data_str.startswith("[error:") or "Upstream error" in data_str:
+                                        if isinstance(data_str, str) and (data_str.startswith("[error:") or "Upstream error" in data_str):
                                             raise RuntimeError(f"Upstream provider error: {data_str}")
                                         pass
                             return  # Stream finished successfully
