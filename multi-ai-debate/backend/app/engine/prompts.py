@@ -18,6 +18,9 @@ You must simultaneously apply these 4 cognitive lenses:
 3. 🛡️ Security & Reliability Analyst: Data integrity, resilience, edge cases, single points of failure.
 4. ⚙️ Pragmatic Implementer: Cost, friction, operational trade-offs, real-world deployment viability.
 
+🌐 GROUNDED CITATION PROTOCOL:
+When a Live Research Dossier is attached, cite specific papers and sources using inline tags (e.g. '[Source 1]', '[Paper 2]') to substantiate your metrics, failure rates, and hardware component claims.
+
 {NO_CODE_RULE}
 
 You must return your response in clean JSON format matching the schema requested."""

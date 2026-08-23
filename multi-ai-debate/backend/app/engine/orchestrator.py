@@ -25,6 +25,7 @@ from app.engine.consensus_eval import (
     generate_final_markdown_report
 )
 from app.storage import SessionStorage, UserConfigStorage, sanitize_folder_name
+from app.providers.research_engine import ResearchEngine
 
 class DebateOrchestrator:
     _event_queues: Dict[str, Set[asyncio.Queue]] = {}
@@ -268,6 +269,32 @@ class DebateOrchestrator:
                 await SessionStorage.save_session(session)
                 break
 
+            # EVERY ROUND: Execute targeted multi-engine research (Tavily + OpenAlex + arXiv)
+            previous_frictions = []
+            if len(session.rounds) > 1:
+                last_round = session.rounds[-2]
+                for r in last_round.responses.values():
+                    if r.structured_turn and r.structured_turn.friction_points:
+                        previous_frictions.extend(r.structured_turn.friction_points)
+
+            try:
+                research_data = await ResearchEngine.conduct_round_research(
+                    round_num=current_round_num,
+                    session_title=session.session_title,
+                    problem_statement=session.problem_statement,
+                    additional_prompt=session.additional_prompt or "",
+                    previous_friction=previous_frictions[:4]
+                )
+                await cls.broadcast_event(session_id, "RESEARCH_DOSSIER_UPDATED", {
+                    "round_number": current_round_num,
+                    "web_summary": research_data.get("web_summary", ""),
+                    "sources": research_data.get("sources", []),
+                    "total_sources": research_data.get("total_sources", 0)
+                })
+            except Exception as re_err:
+                print(f"Research pass error in round {current_round_num}: {re_err}")
+                research_data = {"dossier_text": "", "sources": [], "total_sources": 0}
+
             tasks = []
             for m in active_models:
                 sys_prompt = build_system_prompt_for_debater(m.name, session.ministry_domain)
@@ -291,6 +318,10 @@ class DebateOrchestrator:
                         moderator_injection=moderator_injection,
                         phase_prompt=phase_prompt
                     )
+
+                # Inject the live round's research dossier into the prompt
+                if research_data.get("dossier_text"):
+                    usr_prompt = f"{usr_prompt}\n\n{research_data['dossier_text']}"
 
                 messages = [
                     {"role": "system", "content": sys_prompt},

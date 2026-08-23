@@ -25,5 +25,6 @@ pagesource.txt
 .system_generated/
 scratch/
 multi-ai-debate/backend/data/user_config.json
+multi-ai-debate/backend/data/research_config.json
 multi-ai-debate/backend/data/workspaces/
 multi-ai-debate/backend/data/sessions/

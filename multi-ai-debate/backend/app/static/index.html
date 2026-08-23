@@ -172,6 +172,24 @@
               <div class="text-[10px] text-slate-600">Models: Claude Sonnet 5 Unlimited, Llama 3.3</div>
             </div>
 
+            <div class="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-200 shadow-xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-emerald-950">Tavily AI Search</span>
+                <a href="https://app.tavily.com/sign-up" target="_blank" class="text-[10px] text-emerald-700 font-bold hover:underline">Get Key <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i></a>
+              </div>
+              <div class="text-[10px] font-mono text-emerald-700 truncate">https://api.tavily.com</div>
+              <div class="text-[10px] text-emerald-800 font-medium">Live Web, News & Portals (1k Free/Mo)</div>
+            </div>
+
+            <div class="p-2.5 rounded-xl bg-violet-50/60 border border-violet-200 shadow-xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-violet-950">OpenAlex + arXiv</span>
+                <span class="text-[10px] text-violet-700 font-bold">100% Free & Open</span>
+              </div>
+              <div class="text-[10px] font-mono text-violet-700 truncate">250M+ Research Papers</div>
+              <div class="text-[10px] text-violet-800 font-medium">IEEE, Nature, PubMed (No Key Needed)</div>
+            </div>
+
           </div>
         </div>
 
@@ -346,6 +364,32 @@
       </div>
       <div id="workspaceFilesList" class="flex flex-wrap gap-2 pt-1">
         <span class="text-xs text-slate-400 italic">Debating Phase 1... deliverable .md will appear upon consensus.</span>
+      </div>
+    </div>
+
+    <!-- LIVE GROUND-TRUTH RESEARCH & CITATIONS BAR (TAVILY + OPENALEX + ARXIV) -->
+    <div id="liveResearchBar" class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-xs space-y-2.5">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-ping"></span>
+          <span class="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+            <i class="fa-solid fa-graduation-cap text-indigo-600"></i> Live Ground-Truth Research Dossier:
+          </span>
+          <span id="researchStatusBadge" class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300">
+            Auto-Querying Every Round
+          </span>
+        </div>
+        <span id="researchSourcesCount" class="text-[11px] font-bold text-indigo-700 font-mono">0 Sources Active</span>
+      </div>
+
+      <!-- Live Web Summary Box -->
+      <div id="researchSummaryBox" class="hidden text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200 leading-relaxed font-sans shadow-2xs">
+        <!-- Injected dynamically -->
+      </div>
+
+      <!-- Active Researched Papers & Sources Badges List -->
+      <div id="researchSourcesList" class="flex flex-wrap gap-2 text-xs">
+        <span class="text-[11px] text-slate-400 italic">Research engine will automatically query OpenAlex (250M papers), arXiv, and Tavily for each round...</span>
       </div>
     </div>
 
@@ -1346,6 +1390,49 @@
         document.getElementById('arbiterThinkingBadge').classList.add('hidden');
         renderRoundTabs();
         renderArenaGrid();
+      });
+
+      eventSource.addEventListener('RESEARCH_DOSSIER_UPDATED', (e) => {
+        const d = JSON.parse(e.data);
+        const countBadge = document.getElementById('researchSourcesCount');
+        const summaryBox = document.getElementById('researchSummaryBox');
+        const listContainer = document.getElementById('researchSourcesList');
+        const statusBadge = document.getElementById('researchStatusBadge');
+
+        if (statusBadge) {
+          statusBadge.innerText = `Round ${d.round_number} Research Active`;
+          statusBadge.className = 'px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-300 animate-pulse';
+        }
+
+        if (countBadge) {
+          countBadge.innerText = `${d.total_sources || 0} Sources Cited (Round ${d.round_number})`;
+        }
+
+        if (summaryBox) {
+          if (d.web_summary) {
+            summaryBox.innerHTML = `<strong><i class="fa-solid fa-globe text-emerald-600 mr-1"></i> Live Web Synthesis:</strong> ${d.web_summary}`;
+            summaryBox.classList.remove('hidden');
+          } else {
+            summaryBox.classList.add('hidden');
+          }
+        }
+
+        if (listContainer && d.sources && d.sources.length > 0) {
+          listContainer.innerHTML = d.sources.map(s => {
+            const badgeBg = s.type === 'Academic Paper' ? 'bg-violet-50 text-violet-900 border-violet-200' : s.type === 'arXiv Preprint' ? 'bg-sky-50 text-sky-900 border-sky-200' : 'bg-emerald-50 text-emerald-900 border-emerald-200';
+            const icon = s.type === 'Academic Paper' ? 'fa-book' : s.type === 'arXiv Preprint' ? 'fa-bolt' : 'fa-globe';
+            const extra = s.year ? ` (${s.year}${s.citations ? ' · ' + s.citations + ' cites' : ''})` : '';
+            return `
+              <a href="${s.url}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${badgeBg} hover:opacity-80 transition font-medium text-[11px] shadow-2xs">
+                <i class="fa-solid ${icon} text-[10px]"></i>
+                <span class="font-bold font-mono">[${s.tag}]</span>
+                <span class="truncate max-w-[200px]">${s.title}</span>
+                <span class="text-[10px] opacity-75 font-mono">${extra}</span>
+                <i class="fa-solid fa-arrow-up-right-from-square text-[8px] opacity-50"></i>
+              </a>
+            `;
+          }).join('');
+        }
       });
 
       eventSource.addEventListener('MODEL_STREAM_START', (e) => {
