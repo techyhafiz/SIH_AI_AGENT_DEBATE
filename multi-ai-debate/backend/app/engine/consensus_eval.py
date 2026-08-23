@@ -56,7 +56,14 @@ async def evaluate_round_consensus(
     except Exception:
         score = 70
 
-    # Pure Democratic Collective Voting Across All 11 Debaters (No single AI is a decider)
+    # The Master Arbiter AI evaluates all turns and decides if further rounds are needed
+    arbiter_unanimous = bool(parsed.get("is_unanimous", False))
+    arbiter_score = parsed.get("consensus_score", 70)
+    try:
+        arbiter_score = int(arbiter_score)
+    except Exception:
+        arbiter_score = 70
+
     current_round = session.rounds[-1]
     completed_resps = [r for r in current_round.responses.values() if r.status == "completed"]
     if completed_resps:
@@ -64,10 +71,11 @@ async def evaluate_round_consensus(
         agree_votes = [r for r in completed_resps if r.structured.consensus_vote == "AGREE"]
         avg_debater_pct = sum(debater_scores) / len(completed_resps)
         
-        # Consensus score is the democratic average across all debaters
-        score = int(avg_debater_pct)
-        agree_ratio = len(agree_votes) / len(completed_resps)
-        if agree_ratio >= 0.80 and avg_debater_pct >= 85:
+        # Blended consensus score (60% debater alignment + 40% Arbiter assessment)
+        score = int((avg_debater_pct * 0.6) + (arbiter_score * 0.4))
+        
+        # Arbiter decides whether further rounds are required:
+        if arbiter_unanimous or (len(agree_votes) / len(completed_resps) >= 0.80 and avg_debater_pct >= 85 and arbiter_score >= 80):
             is_unanimous = True
         else:
             is_unanimous = False

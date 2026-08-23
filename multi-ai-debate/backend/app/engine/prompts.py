@@ -273,13 +273,16 @@ Generate an authoritative, definitive, Grand-Finale winning **Consensus Delivera
 
 {NO_CODE_RULE}
 
-Include these key sections:
-1. `# 🏆 SIH Consensus Deliverable: {phase_title}`
-2. `## 1. Executive Summary & Verdict` (Unified conclusion all models agreed upon).
-3. `## 2. In-Depth Technical Specification / Architecture Blueprint` (Conceptual mechanisms, component decomposition, data flows without code).
-4. `## 3. Positives & Negatives Trade-Off Matrix` (Detailed breakdown of **Positives (Pros)** and **Negatives (Cons / Risks)** for each approach considered).
-5. `## 4. Friction Points & Resolution Log` (Table of debated challenges and consensus resolutions).
-6. `## 5. Deployment Feasibility & Ground Realities` (Resilience, scalability, offline tolerance, and operational viability).
-7. `## 6. Official Unanimous Sign-Off Certificate` (Confirmation from each debater model).
+Structure the document with these comprehensive, highly-detailed sections:
+1. `# 🏆 SIH Master Consensus Deliverable: {phase_title}`
+2. `## 1. Executive Summary & Core Innovation Blueprint` (Unified synthesis representing the collective intelligence of all 11 AI models).
+3. `## 2. In-Depth System Architecture & Conceptual Data Flow` (End-to-end component decomposition, sensor topology, edge gateways, cloud orchestrator, and offline mesh resilience).
+4. `## 3. Hardware Bill of Materials (BOM) & Power Budget` (Detailed Markdown table with IC components, sensors, microcontrollers, solar/battery specs, and estimated Indian Rupees ₹ pricing).
+5. `## 4. Edge AI & TinyML Anomaly Detection Pipeline` (Signal preprocessing, Kalman filter / FFT feature extraction, TinyML inference latency, and local early warning thresholds).
+6. `## 5. Peer-Reviewed Academic Research Grounding Matrix` (Explicit table mapping key architectural decisions to the researched OpenAlex papers, arXiv preprints, and Tavily standards).
+7. `## 6. Friction Points, Trade-Offs & Resolution Log` (Table summarizing debated challenges, critiques raised, and final consensus adaptations).
+8. `## 7. Real-World Field Deployment & Ministry Standards Compliance` (ISRO, RDSO, NDMA, and local state government implementation blueprint for Indian terrain).
+9. `## 8. Threat Modeling, Failure Modes & Redundancy Procedures` (Extreme weather contingencies, sensor drift mitigation, and communication blackouts).
+10. `## 9. Official 11-Model Consensus Sign-Off Certificate` (Ratification notes from each AI model).
 
 Generate ONLY the pure Markdown content."""
