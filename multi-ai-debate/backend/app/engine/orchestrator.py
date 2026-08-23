@@ -173,6 +173,14 @@ class DebateOrchestrator:
                 error_message=err_msg
             )
 
+            await cls.broadcast_event(session_id, "MODEL_STREAM_END", {
+                "model_id": model_config.id,
+                "model_name": model_config.name,
+                "round_number": round_number,
+                "status": "timeout",
+                "error_message": err_msg
+            })
+
             await cls.broadcast_event(session_id, "MODEL_TIMEOUT_ALERT", {
                 "model_id": model_config.id,
                 "model_name": model_config.name,
@@ -201,6 +209,14 @@ class DebateOrchestrator:
                 elapsed_seconds=elapsed,
                 error_message=err_msg
             )
+
+            await cls.broadcast_event(session_id, "MODEL_STREAM_END", {
+                "model_id": model_config.id,
+                "model_name": model_config.name,
+                "round_number": round_number,
+                "status": "error",
+                "error_message": err_msg
+            })
 
             await cls.broadcast_event(session_id, "MODEL_ERROR_ALERT", {
                 "model_id": model_config.id,
