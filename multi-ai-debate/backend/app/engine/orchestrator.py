@@ -197,6 +197,15 @@ class DebateOrchestrator:
                 "structured": structured.model_dump(),
                 "elapsed_seconds": elapsed
             })
+
+            try:
+                live_sess = await SessionStorage.get_session(session_id)
+                if live_sess and live_sess.rounds and live_sess.rounds[-1].round_number == round_number:
+                    live_sess.rounds[-1].responses[resp.model_id] = resp
+                    await SessionStorage.save_session(live_sess)
+            except Exception:
+                pass
+
             return resp
 
         except asyncio.TimeoutError:
@@ -234,6 +243,15 @@ class DebateOrchestrator:
                 "elapsed_seconds": elapsed,
                 "error_message": err_msg
             })
+
+            try:
+                live_sess = await SessionStorage.get_session(session_id)
+                if live_sess and live_sess.rounds and live_sess.rounds[-1].round_number == round_number:
+                    live_sess.rounds[-1].responses[resp.model_id] = resp
+                    await SessionStorage.save_session(live_sess)
+            except Exception:
+                pass
+
             return resp
 
         except Exception as e:
@@ -269,6 +287,15 @@ class DebateOrchestrator:
                 "round_number": round_number,
                 "error_message": err_msg
             })
+
+            try:
+                live_sess = await SessionStorage.get_session(session_id)
+                if live_sess and live_sess.rounds and live_sess.rounds[-1].round_number == round_number:
+                    live_sess.rounds[-1].responses[resp.model_id] = resp
+                    await SessionStorage.save_session(live_sess)
+            except Exception:
+                pass
+
             return resp
 
     @classmethod

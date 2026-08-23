@@ -154,7 +154,12 @@ class ResearchEngine:
         if not cfg.get("enabled", True):
             return {"round_num": round_num, "dossier_text": "", "web_summary": "", "sources": [], "total_sources": 0}
 
-        topic_clean = session_title.replace("_", " ")
+        import re
+        raw_problem = (problem_statement or session_title or "").strip()
+        cleaned = re.sub(r'^(Develop|Design|Build|Create|Implement|Formulate|Propose)\s+(an?|the)?\s*', '', raw_problem, flags=re.IGNORECASE)
+        cleaned = re.sub(r'^(AI-driven|AI-based|Smart|Intelligent|Automated)\s*', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'^(system|solution|platform|tool|framework)\s+(for|to)\s*', '', cleaned, flags=re.IGNORECASE)
+        topic_clean = cleaned.split(".")[0].strip()[:90] or session_title.replace("_", " ")
         
         # 1. Multi-Angle Query Decomposition (Prioritizing AI-Requested Topics)
         if ai_requested_queries and len(ai_requested_queries) > 0:
@@ -169,10 +174,10 @@ class ResearchEngine:
         elif round_num == 1:
             q_web_1 = f"{topic_clean} real world deployment architecture specifications india"
             q_web_2 = f"{topic_clean} hardware sensor BOM and power battery constraints"
-            q_academic_1 = f"{topic_clean} IoT architecture"
-            q_academic_2 = f"{topic_clean} monitoring algorithms"
+            q_academic_1 = f"{topic_clean} architecture"
+            q_academic_2 = f"{topic_clean} algorithms"
             q_arxiv_1 = f"{topic_clean} edge computing"
-            q_arxiv_2 = f"{topic_clean} anomaly detection"
+            q_arxiv_2 = f"{topic_clean} TinyML"
         else:
             friction_str = " ".join(previous_friction or [])[:80] if previous_friction else "system reliability and edge constraints"
             q_web_1 = f"{topic_clean} {friction_str} real world validation"
