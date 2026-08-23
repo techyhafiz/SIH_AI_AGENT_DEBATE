@@ -1611,6 +1611,13 @@
         fetchSessionData(sessionId);
       });
 
+      eventSource.addEventListener('MODEL_RETRY_ATTEMPT', (e) => {
+        const d = JSON.parse(e.data);
+        activeStreamingTokens[d.model_id] = '[No token in 2 mins. Resending request (Attempt 2)...]\n';
+        showToast(`${d.model_name}: No response in 2 mins. Auto-retrying request...`, 'warning');
+        requestRenderArenaGrid();
+      });
+
       eventSource.addEventListener('BACKUP_KEY_PROMOTED', (e) => {
         const d = JSON.parse(e.data);
         showToast(`[Failover] ${d.model_name} promoted backup key ${d.promoted_key_masked}`, 'warning');
@@ -1752,7 +1759,21 @@
         const resp = currentRoundData?.responses?.[m.id];
         const streamText = activeStreamingTokens[m.id];
         const isStreaming = streamText !== undefined && (!resp || resp.status === 'streaming');
-        const isFailed = resp && (resp.status === 'error' || resp.status === 'timeout' || (!resp.structured?.refined_solution && resp.error_message));
+
+        // Check if model failed in this round OR in any prior round of this session
+        let prevFailedResp = null;
+        if (currentSession?.rounds) {
+          for (let i = currentSession.rounds.length - 1; i >= 0; i--) {
+            const r = currentSession.rounds[i].responses?.[m.id];
+            if (r && (r.status === 'error' || r.status === 'timeout' || r.status === 'quarantined' || (!r.structured?.refined_solution && r.error_message))) {
+              prevFailedResp = r;
+              break;
+            }
+          }
+        }
+
+        const isFailed = (resp && (resp.status === 'error' || resp.status === 'timeout' || resp.status === 'quarantined' || (!resp.structured?.refined_solution && resp.error_message))) || (!resp && !isStreaming && !!prevFailedResp);
+        const activeErrorMsg = resp?.error_message || prevFailedResp?.error_message || 'Model quarantined / upstream limit reached';
 
         const card = document.createElement('div');
         if (isFailed) {
@@ -1777,7 +1798,7 @@
                 <i class="fa-solid fa-triangle-exclamation"></i> Model Down / Upstream Limit
               </div>
               <div class="text-[11px] font-mono text-rose-900 break-words bg-white p-2.5 rounded-lg border border-rose-200 max-h-32 overflow-y-auto">
-                ${resp.error_message || 'Endpoint connection failed or prompt length exceeded.'}
+                ${activeErrorMsg}
               </div>
               <div class="flex items-center gap-2 pt-1 flex-wrap">
                 <button onclick="testModelInArena('${m.id}')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-bold text-[10px] shadow-2xs">

@@ -107,24 +107,61 @@ class DebateOrchestrator:
             })
 
         try:
-            timeout_limit = float(model_config.timeout_seconds or 600)
+        try:
+            total_timeout = float(model_config.timeout_seconds or 600)
+            FIRST_TOKEN_TIMEOUT = 120.0  # 2 minutes first-token guard
 
-            async def _stream_collector():
-                nonlocal accumulated_text
-                async for token in UniversalAIClient.stream_chat(
-                    config=model_config,
-                    messages=messages,
-                    temperature=model_config.temperature,
-                    on_key_promoted_cb=_on_key_promoted
-                ):
-                    accumulated_text += token
-                    await cls.broadcast_event(session_id, "MODEL_TOKEN_DELTA", {
-                        "model_id": model_config.id,
-                        "delta": token,
-                        "round_number": round_number
-                    })
+            for attempt in [1, 2]:
+                accumulated_text = ""
+                first_token_event = asyncio.Event()
 
-            await asyncio.wait_for(_stream_collector(), timeout=timeout_limit)
+                async def _stream_collector(attempt_num: int):
+                    nonlocal accumulated_text
+                    async for token in UniversalAIClient.stream_chat(
+                        config=model_config,
+                        messages=messages,
+                        temperature=model_config.temperature,
+                        on_key_promoted_cb=_on_key_promoted
+                    ):
+                        if not first_token_event.is_set():
+                            first_token_event.set()
+                        accumulated_text += token
+                        await cls.broadcast_event(session_id, "MODEL_TOKEN_DELTA", {
+                            "model_id": model_config.id,
+                            "delta": token,
+                            "round_number": round_number
+                        })
+
+                collector_task = asyncio.create_task(_stream_collector(attempt))
+
+                if attempt == 1:
+                    # Wait up to 2 mins for first token
+                    try:
+                        await asyncio.wait_for(first_token_event.wait(), timeout=FIRST_TOKEN_TIMEOUT)
+                        # First token received! Now wait for remainder of total_timeout to finish
+                        remaining = max(10.0, total_timeout - (time.time() - start_time))
+                        await asyncio.wait_for(collector_task, timeout=remaining)
+                        break  # Completed successfully on Attempt 1
+                    except asyncio.TimeoutError:
+                        collector_task.cancel()
+                        if not first_token_event.is_set():
+                            # No token in 2 minutes: resend request on Attempt 2!
+                            print(f"[AUTO-RETRY] Model '{model_config.name}' sent 0 words in 2 mins. Resending request (Attempt 2)...")
+                            await cls.broadcast_event(session_id, "MODEL_RETRY_ATTEMPT", {
+                                "model_id": model_config.id,
+                                "model_name": model_config.name,
+                                "round_number": round_number,
+                                "attempt": 2,
+                                "message": f"No response in 2 mins. Resending request (Attempt 2)..."
+                            })
+                            continue
+                        else:
+                            raise asyncio.TimeoutError()
+                else:
+                    # Attempt 2: wait with remaining timeout
+                    remaining = max(15.0, total_timeout - (time.time() - start_time))
+                    await asyncio.wait_for(collector_task, timeout=remaining)
+                    break
             
             clean_text = accumulated_text.strip()
             if clean_text.startswith("[error:") or "Upstream error for model" in clean_text or clean_text.startswith('{"error":'):
