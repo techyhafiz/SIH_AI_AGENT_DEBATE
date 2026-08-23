@@ -70,7 +70,7 @@ When the human user provides API keys, endpoints, or asks to add models in chat:
    - **Google Gemini**: `https://generativelanguage.googleapis.com/v1beta/openai` (Get Key: [https://aistudio.google.com/](https://aistudio.google.com/))
    - **OpenRouter**: `https://openrouter.ai/api/v1` (Get Key: [https://openrouter.ai/keys](https://openrouter.ai/keys))
    - **TokenRouter**: `https://api.tokenrouter.com/v1` (Get Key: [https://tokenrouter.com/](https://tokenrouter.com/))
-   - **BluesMinds**: `https://api.bluesminds.com/v1` (Get Key: [https://bluesminds.com/](https://bluesminds.com/))
+   - **BluesMinds**: `https://api.bluesminds.com/v1` (Register: [https://api.bluesminds.com/sign-up?aff=ou6t](https://api.bluesminds.com/sign-up?aff=ou6t))
 4. **Probe & Validate Latency**: Always test connectivity via `POST /api/models/test` or python probe to ensure the keys and endpoints respond with HTTP 200.
 5. **Never Commit Keys to Git**: Ensure real keys reside exclusively in `user_config.json` (which is `.gitignore`d). Tracked source files like `storage.py` and `index.html` must always have `api_key: ""` placeholders.
 

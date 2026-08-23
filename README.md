@@ -23,7 +23,7 @@ You can obtain keys from any of the verified gateways below:
 | **2** | **Google Gemini (AI Studio)** | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini 3.7 Flash Pool, 3.5 Flash Lite | [👉 Get Gemini Key](https://aistudio.google.com/) |
 | **3** | **OpenRouter** | `https://openrouter.ai/api/v1` | GLM 5.2 (Free), Nemotron 120B Super, Stealth Ox-Alpha | [👉 Get OpenRouter Key](https://openrouter.ai/keys) |
 | **4** | **TokenRouter** | `https://api.tokenrouter.com/v1` | Qwen 3.8 Max (Free Deep Reasoning) | [👉 Get TokenRouter Key](https://tokenrouter.com/) |
-| **5** | **BluesMinds** | `https://api.bluesminds.com/v1` | Claude Sonnet 5 Unlimited, Llama 3.3 | [👉 Get BluesMinds Key](https://bluesminds.com/) |
+| **5** | **BluesMinds** | `https://api.bluesminds.com/v1` | Claude Sonnet 5 Unlimited, Llama 3.3 | [👉 Register on BluesMinds](https://api.bluesminds.com/sign-up?aff=ou6t) |
 
 > 💡 **For Users with AI Coding Assistants (Antigravity / Cursor / Claude Code / Copilot)**:  
 > You can simply paste your API keys directly in the chat with your AI assistant! The AI agent will automatically configure, test, and save them into `backend/data/user_config.json` without requiring you to manually edit files.
