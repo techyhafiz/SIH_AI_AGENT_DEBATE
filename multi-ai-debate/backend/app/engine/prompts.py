@@ -67,6 +67,10 @@ Return your output as a valid JSON object with the following structure:
     "Key challenge / risk 1",
     "Key challenge / risk 2"
   ],
+  "research_queries_for_next_round": [
+    "Specific technical question/limitation to investigate in academic papers (OpenAlex/arXiv)",
+    "Specific hardware/protocol question to verify via live web search (Tavily)"
+  ],
   "consensus_vote": "DISAGREE",
   "agreement_percentage": 50
 }}
@@ -163,6 +167,10 @@ Return your output as a valid JSON object matching this exact schema:
   "negatives_and_risks": [
     "Remaining trade-off 1",
     "Remaining trade-off 2"
+  ],
+  "research_queries_for_next_round": [
+    "Specific technical question/limitation to investigate in academic papers (OpenAlex/arXiv)",
+    "Specific hardware/protocol question to verify via live web search (Tavily)"
   ],
   "consensus_vote": "AGREE or DISAGREE or NEEDS_REFINEMENT",
   "agreement_percentage": 90

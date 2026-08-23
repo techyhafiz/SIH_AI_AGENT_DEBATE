@@ -270,12 +270,17 @@ class DebateOrchestrator:
                 break
 
             # EVERY ROUND: Execute targeted multi-engine research (Tavily + OpenAlex + arXiv)
+            # Harvest specific technical topics, limits, and questions demanded by the debaters
+            ai_demanded_topics = []
             previous_frictions = []
             if len(session.rounds) > 1:
                 last_round = session.rounds[-2]
                 for r in last_round.responses.values():
-                    if r.structured_turn and r.structured_turn.friction_points:
-                        previous_frictions.extend(r.structured_turn.friction_points)
+                    if r.structured:
+                        if r.structured.research_queries_for_next_round:
+                            ai_demanded_topics.extend(r.structured.research_queries_for_next_round)
+                        if r.structured.negatives_and_risks:
+                            previous_frictions.extend(r.structured.negatives_and_risks)
 
             try:
                 research_data = await ResearchEngine.conduct_round_research(
@@ -283,7 +288,8 @@ class DebateOrchestrator:
                     session_title=session.session_title,
                     problem_statement=session.problem_statement,
                     additional_prompt=session.additional_prompt or "",
-                    previous_friction=previous_frictions[:4]
+                    previous_friction=previous_frictions[:4],
+                    ai_requested_queries=ai_demanded_topics[:6]
                 )
                 await cls.broadcast_event(session_id, "RESEARCH_DOSSIER_UPDATED", {
                     "round_number": current_round_num,

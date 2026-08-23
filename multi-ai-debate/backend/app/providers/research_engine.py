@@ -138,15 +138,17 @@ class ResearchEngine:
         problem_statement: str,
         additional_prompt: str = "",
         previous_friction: Optional[List[str]] = None,
+        ai_requested_queries: Optional[List[str]] = None,
         tavily_key: Optional[str] = None,
         openalex_email: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Executes a deep multi-angle parallel research sweep across:
-        1. Core Physical Mechanism & Domain Specifications
-        2. Hardware BOM, Wireless Topology & Edge Constraints
-        3. Cutting-Edge AI/ML Algorithms & Preprints
-        4. Indian Standards & Field Deployment Realities
+        1. AI-Requested Technical Limits & Scope Topics from Previous Turns
+        2. Core Physical Mechanism & Domain Specifications
+        3. Hardware BOM, Wireless Topology & Edge Constraints
+        4. Cutting-Edge AI/ML Algorithms & Preprints
+        5. Indian Standards & Field Deployment Realities
         """
         cfg = cls.get_config()
         if not cfg.get("enabled", True):
@@ -154,8 +156,17 @@ class ResearchEngine:
 
         topic_clean = session_title.replace("_", " ")
         
-        # 1. Multi-Angle Query Decomposition
-        if round_num == 1:
+        # 1. Multi-Angle Query Decomposition (Prioritizing AI-Requested Topics)
+        if ai_requested_queries and len(ai_requested_queries) > 0:
+            ai_q1 = ai_requested_queries[0][:70]
+            ai_q2 = ai_requested_queries[1][:70] if len(ai_requested_queries) > 1 else ai_q1
+            q_web_1 = f"{topic_clean} {ai_q1} real world benchmarks"
+            q_web_2 = f"{topic_clean} {ai_q2} specifications"
+            q_academic_1 = f"{ai_q1}"
+            q_academic_2 = f"{ai_q2}"
+            q_arxiv_1 = f"{ai_q1}"
+            q_arxiv_2 = f"{ai_q2}"
+        elif round_num == 1:
             q_web_1 = f"{topic_clean} real world deployment architecture specifications india"
             q_web_2 = f"{topic_clean} hardware sensor BOM and power battery constraints"
             q_academic_1 = f"{topic_clean} IoT architecture"

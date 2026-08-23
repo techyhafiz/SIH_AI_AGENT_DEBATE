@@ -103,6 +103,7 @@ def parse_structured_turn(raw_json_or_text: Any) -> StructuredDebateTurn:
         refined_solution=str(data.get("refined_solution", "")),
         positives_of_approach=[str(x) for x in data.get("positives_of_approach", []) if x],
         negatives_and_risks=[str(x) for x in data.get("negatives_and_risks", []) if x],
+        research_queries_for_next_round=[str(x) for x in (data.get("research_queries_for_next_round") or data.get("research_topics") or data.get("open_research_questions") or []) if x],
         consensus_vote=vote,
         agreement_percentage=pct
     )

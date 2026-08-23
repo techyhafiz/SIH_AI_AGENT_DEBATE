@@ -38,6 +38,7 @@ class StructuredDebateTurn(BaseModel):
     refined_solution: str = ""
     positives_of_approach: List[str] = Field(default_factory=list)
     negatives_and_risks: List[str] = Field(default_factory=list)
+    research_queries_for_next_round: List[str] = Field(default_factory=list)
     consensus_vote: Literal["AGREE", "DISAGREE", "NEEDS_REFINEMENT"] = "DISAGREE"
     agreement_percentage: int = 50
 
