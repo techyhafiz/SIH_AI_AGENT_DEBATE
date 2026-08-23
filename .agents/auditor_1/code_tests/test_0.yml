@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # 1. Relational & Geospatial Persistence Layer
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: sih_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: sih_admin
+      POSTGRES_PASSWORD: SihSecurePassword2026!
+      POSTGRES_DB: sih_governance_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sih_admin -d sih_governance_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. High-Speed Cache & Background Task Queue
+  redis:
+    image: redis:7.2-alpine
+    container_name: sih_redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass SihRedis2026!
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "SihRedis2026!", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # 3. Object & Document Artifact Storage (Local S3 Simulation)
+  minio:
+    image: minio/minio:latest
+    container_name: sih_minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: sih_minio_admin
+      MINIO_ROOT_PASSWORD: SihMinioPassword2026!
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 4. Backend Application Server (FastAPI / Python 3.11)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sih_backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://sih_admin:SihSecurePassword2026!@postgres:5432/sih_governance_db
+      REDIS_URL: redis://:SihRedis2026!@redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: sih_minio_admin
+      MINIO_SECRET_KEY: SihMinioPassword2026!
+      JWT_SECRET: super_secure_national_hackathon_jwt_secret_key_2026
+      OFFLINE_MODE: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 5. Frontend UI & PWA Client (Next.js 14 / Tailwind)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sih_frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_OFFLINE_MOCK: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

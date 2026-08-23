@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Data & Credentials
+data/user_config.json
+data/workspaces/
+data/sessions/
+*.log
+test_*.py
+
+# Node & UI
+node_modules/
+dist/
+build/
+.DS_Store
+Thumbs.db

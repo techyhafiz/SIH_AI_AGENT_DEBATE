@@ -1,0 +1,67 @@
+{
+  "session_id": "172a4929-7e6",
+  "workspace_folder": "C:\\Users\\mujaw\\Downloads\\SIH\\multi-ai-debate\\backend\\app\\..\\data\\workspaces\\Test_Disaster_NDRF_172a4929-7e6",
+  "session_title": "Test_Disaster_NDRF",
+  "problem_statement": "Design offline LoRa mesh network for cyclone response.",
+  "ministry_domain": "Ministry of Home Affairs",
+  "models": [
+    {
+      "id": "m1",
+      "name": "Claude 3.5 Sonnet",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "key-1",
+      "backup_api_keys": [
+        "backup-key-1"
+      ],
+      "model_id": "anthropic/claude-3.5-sonnet",
+      "provider_type": "openai_compatible",
+      "timeout_seconds": 600,
+      "is_arbiter": true,
+      "enabled": true,
+      "temperature": 0.7
+    },
+    {
+      "id": "m2",
+      "name": "DeepSeek R1",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "key-2",
+      "backup_api_keys": [],
+      "model_id": "deepseek/deepseek-r1",
+      "provider_type": "openai_compatible",
+      "timeout_seconds": 600,
+      "is_arbiter": false,
+      "enabled": true,
+      "temperature": 0.7
+    }
+  ],
+  "arbiter_model_id": "m1",
+  "phases": [],
+  "current_phase_index": 2,
+  "current_phase_prompt": "Now generate complete Technical Specification list in MD",
+  "rounds": [
+    {
+      "round_number": 1,
+      "phase_index": 2,
+      "phase_title": "Phase 2",
+      "responses": {},
+      "arbiter_eval": null,
+      "moderator_injection": null,
+      "started_at": 1787489791.8821437,
+      "completed_at": null
+    },
+    {
+      "round_number": 2,
+      "phase_index": 2,
+      "phase_title": "Phase 2",
+      "responses": {},
+      "arbiter_eval": null,
+      "moderator_injection": null,
+      "started_at": 1787489791.8893933,
+      "completed_at": null
+    }
+  ],
+  "status": "running",
+  "current_round_num": 2,
+  "final_markdown_report": "# Phase 1 Verdict\nAgreed on LoRa 868MHz Mesh architecture.",
+  "created_at": 1787489791.8520238
+}

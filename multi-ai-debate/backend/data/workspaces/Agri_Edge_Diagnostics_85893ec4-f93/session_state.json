@@ -1,0 +1,155 @@
+{
+  "session_id": "85893ec4-f93",
+  "workspace_folder": "C:\\Users\\mujaw\\Downloads\\SIH\\multi-ai-debate\\backend\\app\\..\\data\\workspaces\\Agri_Edge_Diagnostics_85893ec4-f93",
+  "session_title": "Agri_Edge_Diagnostics",
+  "problem_statement": "Develop an edge-AI multimodal diagnostic solution for low-end Android smartphones to identify 50+ crop diseases in vernacular Indian languages with zero server latency.",
+  "ministry_domain": "Ministry of Agriculture & Farmers Welfare",
+  "models": [
+    {
+      "id": "m1",
+      "name": "Claude 3.5 Sonnet",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "",
+      "backup_api_keys": [],
+      "model_id": "anthropic/claude-3.5-sonnet",
+      "provider_type": "openai_compatible",
+      "timeout_seconds": 600,
+      "is_arbiter": true,
+      "enabled": true,
+      "temperature": 0.7
+    },
+    {
+      "id": "m2",
+      "name": "DeepSeek R1",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "",
+      "backup_api_keys": [],
+      "model_id": "deepseek/deepseek-r1",
+      "provider_type": "openai_compatible",
+      "timeout_seconds": 600,
+      "is_arbiter": false,
+      "enabled": true,
+      "temperature": 0.6
+    },
+    {
+      "id": "m3",
+      "name": "Gemini 2.0 Flash",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "",
+      "backup_api_keys": [],
+      "model_id": "google/gemini-2.0-flash-001",
+      "provider_type": "openai_compatible",
+      "timeout_seconds": 600,
+      "is_arbiter": false,
+      "enabled": true,
+      "temperature": 0.7
+    }
+  ],
+  "arbiter_model_id": "m1",
+  "phases": [
+    {
+      "phase_index": 1,
+      "prompt": "Develop an edge-AI multimodal diagnostic solution for low-end Android smartphones to identify 50+ crop diseases in vernacular Indian languages with zero server latency.",
+      "phase_title": "Phase 1",
+      "verdict_filename": "phase_1_Phase_1.md",
+      "verdict_markdown": "# \ud83c\udfc6 SIH Master Consensus Report: Phase 1\n\n**Note**: Generated with fallback synthesis.\n\n## 1. Final Agreed Solution\nConsensus reached on architecture.",
+      "completed_at": 1787491415.2596626
+    },
+    {
+      "phase_index": 1,
+      "prompt": "Develop an edge-AI multimodal diagnostic solution for low-end Android smartphones to identify 50+ crop diseases in vernacular Indian languages with zero server latency.",
+      "phase_title": "Phase 1",
+      "verdict_filename": "phase_1_Phase_1.md",
+      "verdict_markdown": "# \ud83c\udfc6 SIH Master Consensus Report: Phase 1\n\n**Note**: Generated with fallback synthesis.\n\n## 1. Final Agreed Solution\nConsensus reached on architecture.",
+      "completed_at": 1787491417.0997145
+    }
+  ],
+  "current_phase_index": 1,
+  "current_phase_prompt": "Develop an edge-AI multimodal diagnostic solution for low-end Android smartphones to identify 50+ crop diseases in vernacular Indian languages with zero server latency.",
+  "rounds": [
+    {
+      "round_number": 1,
+      "phase_index": 1,
+      "phase_title": "Phase 1",
+      "responses": {
+        "m1": {
+          "model_id": "m1",
+          "model_name": "Claude 3.5 Sonnet",
+          "round_number": 1,
+          "raw_text": "",
+          "structured": {
+            "architect_lens": "",
+            "critic_devil_advocate_lens": "",
+            "security_reliability_lens": "",
+            "pragmatist_feasibility_lens": "",
+            "critiques": [],
+            "concessions_and_defenses": [],
+            "refined_solution": "All candidate API keys failed for Model 'Claude 3.5 Sonnet': HTTP 401: {\"error\":{\"message\":\"No cookie auth credentials found\",\"code\":401}}",
+            "positives_of_approach": [],
+            "negatives_and_risks": [],
+            "consensus_vote": "DISAGREE",
+            "agreement_percentage": 50
+          },
+          "status": "error",
+          "elapsed_seconds": 5.772017478942871,
+          "error_message": "All candidate API keys failed for Model 'Claude 3.5 Sonnet': HTTP 401: {\"error\":{\"message\":\"No cookie auth credentials found\",\"code\":401}}",
+          "active_key_used": null
+        },
+        "m2": {
+          "model_id": "m2",
+          "model_name": "DeepSeek R1",
+          "round_number": 1,
+          "raw_text": "",
+          "structured": {
+            "architect_lens": "",
+            "critic_devil_advocate_lens": "",
+            "security_reliability_lens": "",
+            "pragmatist_feasibility_lens": "",
+            "critiques": [],
+            "concessions_and_defenses": [],
+            "refined_solution": "All candidate API keys failed for Model 'DeepSeek R1': HTTP 401: {\"error\":{\"message\":\"No cookie auth credentials found\",\"code\":401}}",
+            "positives_of_approach": [],
+            "negatives_and_risks": [],
+            "consensus_vote": "DISAGREE",
+            "agreement_percentage": 50
+          },
+          "status": "error",
+          "elapsed_seconds": 3.368013620376587,
+          "error_message": "All candidate API keys failed for Model 'DeepSeek R1': HTTP 401: {\"error\":{\"message\":\"No cookie auth credentials found\",\"code\":401}}",
+          "active_key_used": null
+        },
+        "m3": {
+          "model_id": "m3",
+          "model_name": "Gemini 2.0 Flash",
+          "round_number": 1,
+          "raw_text": "",
+          "structured": {
+            "architect_lens": "",
+            "critic_devil_advocate_lens": "",
+            "security_reliability_lens": "",
+            "pragmatist_feasibility_lens": "",
+            "critiques": [],
+            "concessions_and_defenses": [],
+            "refined_solution": "All candidate API keys failed for Model 'Gemini 2.0 Flash': HTTP 401: {\"error\":{\"message\":\"No cookie auth credentials found\",\"code\":401}}",
+            "positives_of_approach": [],
+            "negatives_and_risks": [],
+            "consensus_vote": "DISAGREE",
+            "agreement_percentage": 50
+          },
+          "status": "error",
+          "elapsed_seconds": 1.6906805038452148,
+          "error_message": "All candidate API keys failed for Model 'Gemini 2.0 Flash': HTTP 401: {\"error\":{\"message\":\"No cookie auth credentials found\",\"code\":401}}",
+          "active_key_used": null
+        }
+      },
+      "arbiter_eval": null,
+      "moderator_injection": null,
+      "started_at": 1787491382.2764218,
+      "completed_at": 1787491388.0641582
+    }
+  ],
+  "status": "completed",
+  "current_round_num": 1,
+  "final_markdown_report": "# \ud83c\udfc6 SIH Master Consensus Report: Phase 1\n\n**Note**: Generated with fallback synthesis.\n\n## 1. Final Agreed Solution\nConsensus reached on architecture.",
+  "created_at": 1787491382.2613113
+}

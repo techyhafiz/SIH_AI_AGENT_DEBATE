@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.venv/
+env/
+venv/
+ENV/
+
+# Node.js
+node_modules/
+.next/
+out/
+build/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System & Scratch
+.DS_Store
+Thumbs.db
+pagesource.txt
+.system_generated/
+scratch/
+multi-ai-debate/backend/data/user_config.json
+multi-ai-debate/backend/data/workspaces/
+multi-ai-debate/backend/data/sessions/
