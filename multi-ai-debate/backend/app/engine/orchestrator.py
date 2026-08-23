@@ -107,7 +107,6 @@ class DebateOrchestrator:
             })
 
         try:
-        try:
             total_timeout = float(model_config.timeout_seconds or 600)
             FIRST_TOKEN_TIMEOUT = 120.0  # 2 minutes first-token guard
 
@@ -145,14 +144,23 @@ class DebateOrchestrator:
                     except asyncio.TimeoutError:
                         collector_task.cancel()
                         if not first_token_event.is_set():
-                            # No token in 2 minutes: resend request on Attempt 2!
-                            print(f"[AUTO-RETRY] Model '{model_config.name}' sent 0 words in 2 mins. Resending request (Attempt 2)...")
+                            # Check if a backup key is present to rotate for Attempt 2
+                            rotated_key_msg = ""
+                            if model_config.backup_api_keys and len(model_config.backup_api_keys) > 0:
+                                old_key = model_config.api_key
+                                new_key = model_config.backup_api_keys.pop(0)
+                                model_config.backup_api_keys.append(old_key)
+                                model_config.api_key = new_key
+                                await _on_key_promoted(model_config, new_key)
+                                rotated_key_msg = f" (switched to backup key {new_key[:6]}...)"
+
+                            print(f"[AUTO-RETRY] Model '{model_config.name}' sent 0 words in 2 mins. Resending request for Attempt 2{rotated_key_msg}...")
                             await cls.broadcast_event(session_id, "MODEL_RETRY_ATTEMPT", {
                                 "model_id": model_config.id,
                                 "model_name": model_config.name,
                                 "round_number": round_number,
                                 "attempt": 2,
-                                "message": f"No response in 2 mins. Resending request (Attempt 2)..."
+                                "message": f"No response in 2 mins. Auto-retrying on Attempt 2{rotated_key_msg}..."
                             })
                             continue
                         else:
