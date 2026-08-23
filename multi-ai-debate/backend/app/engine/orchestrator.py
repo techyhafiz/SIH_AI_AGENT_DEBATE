@@ -126,6 +126,10 @@ class DebateOrchestrator:
 
             await asyncio.wait_for(_stream_collector(), timeout=timeout_limit)
             
+            clean_text = accumulated_text.strip()
+            if clean_text.startswith("[error:") or "Upstream error for model" in clean_text or clean_text.startswith('{"error":'):
+                raise RuntimeError(clean_text)
+
             elapsed = time.time() - start_time
             structured = parse_structured_turn(accumulated_text)
 
