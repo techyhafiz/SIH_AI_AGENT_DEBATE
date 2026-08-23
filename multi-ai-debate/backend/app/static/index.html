@@ -860,6 +860,32 @@
     let activeStreamingTokens = {};
     let currentFollowupTitle = '';
 
+    function showToast(message, type = 'info') {
+      let container = document.getElementById('toastContainer');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none';
+        document.body.appendChild(container);
+      }
+      const toast = document.createElement('div');
+      const bg = type === 'error' ? 'bg-rose-600' : type === 'success' ? 'bg-emerald-600' : type === 'warning' ? 'bg-amber-600' : 'bg-indigo-600';
+      const icon = type === 'error' ? 'fa-triangle-exclamation' : type === 'success' ? 'fa-circle-check' : type === 'warning' ? 'fa-bolt' : 'fa-circle-info';
+      
+      toast.className = `${bg} text-white px-4 py-3 rounded-2xl shadow-xl text-xs font-semibold flex items-center gap-2.5 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto border border-white/20`;
+      toast.innerHTML = `<i class="fa-solid ${icon} text-sm"></i> <span>${message}</span>`;
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 4500);
+    }
+
     async function loadUserConfig() {
       try {
         const res = await fetch('/api/user/config');
@@ -1408,7 +1434,7 @@
       const autoAdvance = document.getElementById('autoAdvanceToggle').checked;
 
       if (!problem) {
-        alert('Please enter or select a problem statement.');
+        showToast('Please enter or select a problem statement.', 'warning');
         return;
       }
 
@@ -1443,7 +1469,7 @@
         
         connectSSE(data.session_id);
       } catch (e) {
-        alert(`Error starting debate: ${e.message}`);
+        showToast(`Error starting debate: ${e.message}`, 'error');
         document.getElementById('startDebateBtn').disabled = false;
         document.getElementById('startDebateBtn').innerHTML = '<i class="fa-solid fa-play"></i> Initialize Workspace & Launch Debate';
       }
@@ -1547,7 +1573,7 @@
       eventSource.addEventListener('MODEL_STREAM_START', (e) => {
         const d = JSON.parse(e.data);
         activeStreamingTokens[d.model_id] = '';
-        renderArenaGrid();
+        requestRenderArenaGrid();
       });
 
       eventSource.addEventListener('MODEL_TOKEN_DELTA', (e) => {
@@ -1557,12 +1583,14 @@
         if (streamBox) {
           streamBox.innerText = activeStreamingTokens[d.model_id];
           streamBox.scrollTop = streamBox.scrollHeight;
+        } else {
+          requestRenderArenaGrid();
         }
       });
 
       eventSource.addEventListener('BACKUP_KEY_PROMOTED', (e) => {
         const d = JSON.parse(e.data);
-        alert(`[FAILOVER PROMOTED] Model '${d.model_name}' promoted backup key ${d.promoted_key_masked} as primary.`);
+        showToast(`[Failover] ${d.model_name} promoted backup key ${d.promoted_key_masked}`, 'warning');
       });
 
       eventSource.addEventListener('ARBITER_EVALUATING', () => {
@@ -1579,12 +1607,14 @@
 
       eventSource.addEventListener('MODEL_ERROR_ALERT', (e) => {
         const d = JSON.parse(e.data);
+        showToast(`Model Error: ${d.model_name} - ${d.error_message?.substring(0, 60)}`, 'error');
         openModelErrorModal(d);
         fetchSessionData(sessionId);
       });
 
       eventSource.addEventListener('MODEL_TIMEOUT_ALERT', (e) => {
         const d = JSON.parse(e.data);
+        showToast(`Timeout: ${d.model_name} exceeded time limit`, 'error');
         openModelErrorModal(d);
         fetchSessionData(sessionId);
       });
@@ -1606,25 +1636,26 @@
       eventSource.addEventListener('MODEL_UPDATED_UNQUARANTINED', (e) => {
         const d = JSON.parse(e.data);
         closeModelErrorModal();
-        alert(`Model '${d.model_name}' updated and unquarantined! Turn re-executed.`);
+        showToast(`Model '${d.model_name}' updated and unquarantined! Turn re-executed.`, 'success');
         fetchSessionData(sessionId);
       });
 
       eventSource.addEventListener('MODEL_DROPPED', (e) => {
         const d = JSON.parse(e.data);
         closeModelErrorModal();
+        showToast(`Model dropped from debate.`, 'info');
         fetchSessionData(sessionId);
       });
 
       eventSource.addEventListener('ALL_MODELS_UNAVAILABLE', (e) => {
         const d = JSON.parse(e.data);
-        alert(d.message || 'All models are unavailable. Debate paused.');
+        showToast(d.message || 'All models are unavailable. Debate paused.', 'error');
         fetchSessionData(sessionId);
       });
 
       eventSource.addEventListener('ROUND_FAILED', (e) => {
         const d = JSON.parse(e.data);
-        alert(`Round ${d.round_number} paused: ${d.message}`);
+        showToast(`Round ${d.round_number} paused: ${d.message}`, 'error');
         fetchSessionData(sessionId);
       });
 
@@ -1672,8 +1703,17 @@
         const btn = document.createElement('button');
         btn.className = `px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${r.round_number === activeRound ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200'}`;
         btn.innerText = `R${r.round_number} (P${r.phase_index || 1})`;
-        btn.onclick = () => { activeRound = r.round_number; renderArenaGrid(); renderRoundTabs(); };
+        btn.onclick = () => { activeRound = r.round_number; requestRenderArenaGrid(); renderRoundTabs(); };
         container.appendChild(btn);
+      });
+    }
+
+    let renderGridRAF = null;
+    function requestRenderArenaGrid() {
+      if (renderGridRAF) return;
+      renderGridRAF = requestAnimationFrame(() => {
+        renderArenaGrid();
+        renderGridRAF = null;
       });
     }
 
@@ -1803,7 +1843,7 @@
 
     function copyVerdict() {
       navigator.clipboard.writeText(window.latestMarkdown || '');
-      alert('Markdown copied to clipboard!');
+      showToast('Markdown copied to clipboard!', 'success');
     }
 
     function downloadVerdictFile() {
@@ -1874,7 +1914,7 @@
       closeSavedDebatesModal();
       const res = await fetch(`/api/debate/${sessionId}`);
       if (!res.ok) {
-        alert('Failed to load session from disk.');
+        showToast('Failed to load session from disk.', 'error');
         return;
       }
       currentSession = await res.json();
