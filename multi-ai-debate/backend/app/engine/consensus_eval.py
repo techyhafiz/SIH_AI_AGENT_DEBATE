@@ -56,11 +56,21 @@ async def evaluate_round_consensus(
     except Exception:
         score = 70
 
-    is_unanimous = bool(parsed.get("is_unanimous", False))
+    # Pure Democratic Collective Voting Across All 11 Debaters (No single AI is a decider)
     current_round = session.rounds[-1]
-    votes = [resp.structured.consensus_vote for resp in current_round.responses.values() if resp.status == "completed"]
-    if len(votes) >= 2 and all(v == "AGREE" for v in votes) and score >= 90:
-        is_unanimous = True
+    completed_resps = [r for r in current_round.responses.values() if r.status == "completed"]
+    if completed_resps:
+        debater_scores = [r.structured.agreement_percentage for r in completed_resps]
+        agree_votes = [r for r in completed_resps if r.structured.consensus_vote == "AGREE"]
+        avg_debater_pct = sum(debater_scores) / len(completed_resps)
+        
+        # Consensus score is the democratic average across all debaters
+        score = int(avg_debater_pct)
+        agree_ratio = len(agree_votes) / len(completed_resps)
+        if agree_ratio >= 0.80 and avg_debater_pct >= 85:
+            is_unanimous = True
+        else:
+            is_unanimous = False
 
     friction_list = []
     for fp in parsed.get("friction_points", []):
