@@ -839,10 +839,10 @@
     }
 
     let defaultModels = [
-      { id: 'm1', name: 'Claude Opus 4.8', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [], model_id: 'claude-opus-4-8', timeout_seconds: 600, is_arbiter: true, enabled: true, temperature: 0.7 },
+      { id: 'm1', name: 'Claude Opus 4.8', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [], model_id: 'claude-opus-4-8', timeout_seconds: 600, is_arbiter: false, enabled: true, temperature: 0.7 },
       { id: 'm2', name: 'Claude Opus 5.0', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [], model_id: 'claude-opus-5', timeout_seconds: 600, is_arbiter: false, enabled: true, temperature: 0.6 },
       { id: 'm3', name: 'GPT 5.6 Sol', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [], model_id: 'gpt-5.6-sol', timeout_seconds: 600, is_arbiter: false, enabled: true, temperature: 0.7 },
-      { id: 'm4', name: 'Gemini 3.5 Flash Lite', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', api_key: '', backup_api_keys: [], model_id: 'gemini-3.5-flash-lite', fallback_model_ids: ['gemini-flash-lite-latest'], timeout_seconds: 600, is_arbiter: false, enabled: true, temperature: 0.7 },
+      { id: 'm4', name: 'Gemini 3.5 Flash Lite', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', api_key: '', backup_api_keys: [], model_id: 'gemini-3.5-flash-lite', fallback_model_ids: ['gemini-flash-lite-latest'], timeout_seconds: 600, is_arbiter: true, enabled: true, temperature: 0.7 },
       { id: 'm5', name: 'Gemini Flash Quota Pool (3.7 / 3.6 / 3.5)', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', api_key: '', backup_api_keys: [], model_id: 'gemini-3.7-flash', fallback_model_ids: ['gemini-3.6-flash', 'gemini-3.5-flash'], timeout_seconds: 600, is_arbiter: false, enabled: true, temperature: 0.7 },
       { id: 'm6', name: 'GLM 5.2 (Free)', base_url: 'https://openrouter.ai/api/v1', api_key: '', backup_api_keys: [], model_id: 'z-ai/glm-5.2:free', timeout_seconds: 600, is_arbiter: false, enabled: true, temperature: 0.7 },
       { id: 'm7', name: 'NVIDIA Nemotron 3 Super 120B (Free)', base_url: 'https://openrouter.ai/api/v1', api_key: '', backup_api_keys: [], model_id: 'nvidia/nemotron-3-super-120b-a12b:free', timeout_seconds: 600, is_arbiter: false, enabled: true, temperature: 0.7 },
@@ -1375,20 +1375,27 @@
       if (m && m.backup_api_keys) {
         m.backup_api_keys.splice(index, 1);
         renderModelConfigList();
-        renderWizardModelList();
+        renderWizardCards();
+        saveModelsToLocalStorage();
       }
     }
 
     function setArbiter(id) {
+      const target = models.find(m => m.id === id);
       models = models.map(m => ({ ...m, is_arbiter: m.id === id }));
       renderModelConfigList();
-      renderWizardModelList();
+      renderWizardCards();
+      saveModelsToLocalStorage();
+      if (target) {
+        showToast(`Master Arbiter switched to: ${target.name}`, 'success');
+      }
     }
 
     function removeModel(id) {
       models = models.filter(m => m.id !== id);
       renderModelConfigList();
-      renderWizardModelList();
+      renderWizardCards();
+      saveModelsToLocalStorage();
     }
 
     function addNewModelConfig() {
@@ -1406,7 +1413,8 @@
         temperature: 0.7
       });
       renderModelConfigList();
-      renderWizardModelList();
+      renderWizardCards();
+      saveModelsToLocalStorage();
     }
 
     async function testModel(id) {
