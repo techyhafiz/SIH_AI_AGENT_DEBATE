@@ -116,6 +116,43 @@
       <!-- Models List Container -->
       <div class="p-6 md:p-8 flex-1 overflow-y-auto space-y-6">
         
+        <!-- RESEARCH ENGINE SETTINGS (TAVILY + OPENALEX + ARXIV) -->
+        <div class="p-5 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-3.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="p-2 rounded-xl bg-indigo-600 text-white text-xs">
+                <i class="fa-solid fa-graduation-cap"></i>
+              </div>
+              <div>
+                <h3 class="text-xs font-bold text-slate-900">Deep Autonomous Research Engine</h3>
+                <p class="text-[11px] text-slate-500">Every round pulls up to 15+ academic papers (OpenAlex), arXiv preprints & live web data (Tavily)</p>
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-xs font-bold text-indigo-900 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-2xs">
+              <input type="checkbox" id="wizardResearchToggle" onchange="toggleResearchMode(this.checked)" checked class="rounded text-indigo-600">
+              <span>Research Mode Active</span>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span>Tavily API Key (Live Web & Government Portals)</span>
+                <a href="https://app.tavily.com/sign-up" target="_blank" class="text-indigo-600 font-bold hover:underline">Get Free Key</a>
+              </label>
+              <input type="password" id="wizardTavilyKey" onchange="saveResearchSettingsFromWizard()" placeholder="tvly-..." class="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono text-[11px] focus:outline-none focus:border-indigo-600">
+            </div>
+
+            <div>
+              <label class="block text-[10px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span>OpenAlex Polite Pool Email (250M Papers)</span>
+                <span class="text-emerald-600 font-semibold">100k free req/day</span>
+              </label>
+              <input type="email" id="wizardOpenalexEmail" onchange="saveResearchSettingsFromWizard()" placeholder="your_email@gmail.com" class="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono text-[11px] focus:outline-none focus:border-indigo-600">
+            </div>
+          </div>
+        </div>
+
         <!-- PROVIDER DIRECTORY & GET KEYS GUIDE -->
         <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
           <div class="flex items-center justify-between">
@@ -249,10 +286,17 @@
           </h2>
           <p class="text-xs text-slate-500 mt-0.5">Select from 226 stored SIH statements by typing PS Code or keyword, with custom prompt extensions</p>
         </div>
-        <label class="text-xs text-slate-700 flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer">
-          <input type="checkbox" id="autoAdvanceToggle" checked class="rounded bg-white border-slate-300 text-indigo-600">
-          <span class="font-medium">Continuous Infinite Rounds</span>
-        </label>
+        <div class="flex items-center gap-2 flex-wrap">
+          <label class="text-xs text-indigo-900 font-bold flex items-center gap-1.5 bg-indigo-50/80 px-3 py-1.5 rounded-lg border border-indigo-200 cursor-pointer shadow-2xs">
+            <input type="checkbox" id="mainResearchToggle" onchange="toggleResearchMode(this.checked)" checked class="rounded bg-white border-indigo-300 text-indigo-600">
+            <i class="fa-solid fa-graduation-cap text-indigo-600"></i>
+            <span>Deep Research Mode</span>
+          </label>
+          <label class="text-xs text-slate-700 flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer">
+            <input type="checkbox" id="autoAdvanceToggle" checked class="rounded bg-white border-slate-300 text-indigo-600">
+            <span class="font-medium">Continuous Infinite Rounds</span>
+          </label>
+        </div>
       </div>
 
       <!-- Live Search & Autocomplete for 226+ Problem Statements -->
@@ -853,6 +897,71 @@
         });
       } catch (e) {
         console.error('Error saving user config to backend:', e);
+      }
+    }
+
+    // RESEARCH ENGINE CONFIG FUNCTIONS
+    let researchConfig = {
+      enabled: true,
+      tavily_api_key: '',
+      openalex_email: 'campusprintexpress@gmail.com'
+    };
+
+    async function loadResearchConfig() {
+      try {
+        const res = await fetch('/api/research/config');
+        if (res.ok) {
+          researchConfig = await res.json();
+          const mainToggle = document.getElementById('mainResearchToggle');
+          const wizardToggle = document.getElementById('wizardResearchToggle');
+          const tavilyInput = document.getElementById('wizardTavilyKey');
+          const emailInput = document.getElementById('wizardOpenalexEmail');
+
+          if (mainToggle) mainToggle.checked = !!researchConfig.enabled;
+          if (wizardToggle) wizardToggle.checked = !!researchConfig.enabled;
+          if (tavilyInput) tavilyInput.value = researchConfig.tavily_api_key || '';
+          if (emailInput) emailInput.value = researchConfig.openalex_email || 'campusprintexpress@gmail.com';
+        }
+      } catch (err) {
+        console.warn('Failed to load research config:', err);
+      }
+    }
+
+    async function saveResearchSettingsFromWizard() {
+      const tavilyKey = document.getElementById('wizardTavilyKey').value.trim();
+      const openalexEmail = document.getElementById('wizardOpenalexEmail').value.trim();
+      const enabled = document.getElementById('wizardResearchToggle').checked;
+
+      researchConfig.tavily_api_key = tavilyKey;
+      researchConfig.openalex_email = openalexEmail;
+      researchConfig.enabled = enabled;
+
+      try {
+        await fetch('/api/research/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(researchConfig)
+        });
+      } catch (err) {
+        console.error('Failed to save research config:', err);
+      }
+    }
+
+    async function toggleResearchMode(checked) {
+      researchConfig.enabled = checked;
+      const mainToggle = document.getElementById('mainResearchToggle');
+      const wizardToggle = document.getElementById('wizardResearchToggle');
+      if (mainToggle) mainToggle.checked = checked;
+      if (wizardToggle) wizardToggle.checked = checked;
+
+      try {
+        await fetch('/api/research/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: checked })
+        });
+      } catch (err) {
+        console.error('Failed to update research toggle:', err);
       }
     }
 
@@ -1854,8 +1963,9 @@
       closeModelErrorModal();
     }
 
-    // Load permanent user config, stored problem statements, and GitHub version on start
+    // Load permanent user config, research settings, stored problem statements, and GitHub version on start
     loadUserConfig();
+    loadResearchConfig();
     loadAllProblemStatements();
     checkGitHubVersion();
   </script>

@@ -125,6 +125,24 @@ async def check_app_version():
         "repo_url": "https://github.com/techyhafiz/SIH_AI_AGENT_DEBATE"
     }
 
+from app.providers.research_engine import ResearchEngine
+
+@app.get("/api/research/config")
+async def get_research_config():
+    """
+    Returns the user's research configuration (Tavily key, polite email, toggle status).
+    """
+    return ResearchEngine.get_config()
+
+@app.post("/api/research/config")
+async def save_research_config(req: Request):
+    """
+    Saves the user's research settings (Tavily key, polite email, toggle status).
+    """
+    data = await req.json()
+    ResearchEngine.save_config(data)
+    return {"status": "success", "config": ResearchEngine.get_config()}
+
 @app.get("/api/user/config")
 async def get_user_config():
     """
