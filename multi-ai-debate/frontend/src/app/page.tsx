@@ -71,8 +71,8 @@ import {
 const DEFAULT_FLEET: ModelConfig[] = [
   { id: 'm1', name: 'Claude Opus 4.8', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [''], model_id: 'claude-opus-4-8', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: false, enabled: true, temperature: 0.7 },
   { id: 'm2', name: 'Claude Opus 5.0', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [''], model_id: 'claude-opus-5', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: false, enabled: true, temperature: 0.6 },
-  { id: 'm3', name: 'GPT 5.6 Sol', base_url: 'https://agentrouter.org/v1', api_key: 'sk-6FoEw2n9eRBjlyttLte6FOyhaeG1DNlmEnba1vcZhEHUuD77', backup_api_keys: [''], model_id: 'gpt-5.6-sol', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: false, enabled: true, temperature: 0.7 },
-  { id: 'm4', name: 'Gemini 3.5 Flash Lite', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', api_key: '', backup_api_keys: [], model_id: 'gemini-3.5-flash-lite', fallback_model_ids: ['gemini-flash-lite-latest'], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: true, is_backup_arbiter: false, enabled: true, temperature: 0.7 },
+  { id: 'm3', name: 'GPT 5.6 Sol', base_url: 'https://agentrouter.org/v1', api_key: 'sk-6FoEw2n9eRBjlyttLte6FOyhaeG1DNlmEnba1vcZhEHUuD77', backup_api_keys: [''], model_id: 'gpt-5.6-sol', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: true, is_backup_arbiter: false, enabled: true, temperature: 0.7 },
+  { id: 'm4', name: 'Gemini 3.5 Flash Lite', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', api_key: '', backup_api_keys: [], model_id: 'gemini-3.5-flash-lite', fallback_model_ids: ['gemini-flash-lite-latest'], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: true, enabled: true, temperature: 0.7 },
   { id: 'm5', name: 'Gemini Flash Quota Pool (3.7 / 3.6 / 3.5)', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai', api_key: '', backup_api_keys: [], model_id: 'gemini-3.7-flash', fallback_model_ids: ['gemini-3.6-flash', 'gemini-3.5-flash'], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: true, enabled: true, temperature: 0.7 },
   { id: 'm6', name: 'GLM 5.2 (Free)', base_url: 'https://openrouter.ai/api/v1', api_key: '', backup_api_keys: [], model_id: 'z-ai/glm-5.2:free', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: false, enabled: true, temperature: 0.7 },
   { id: 'm7', name: 'NVIDIA Nemotron 3 Super 120B (Free)', base_url: 'https://openrouter.ai/api/v1', api_key: '', backup_api_keys: [], model_id: 'nvidia/nemotron-3-super-120b-a12b:free', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: false, enabled: true, temperature: 0.7 },
@@ -193,6 +193,16 @@ export default function HomePage() {
   const [isStartModalOpen, setIsStartModalOpen] = useState(false);
   const [isInjectModalOpen, setIsInjectModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isArbiterCommandOpen, setIsArbiterCommandOpen] = useState(false);
+  const [arbiterCommandText, setArbiterCommandText] = useState('');
+  const [isSendingArbiterCmd, setIsSendingArbiterCmd] = useState(false);
+  const [arbiterActionLogs, setArbiterActionLogs] = useState<Array<{ sender: string; text: string; time: string }>>([
+    {
+      sender: 'GPT 5.6 Sol (Master Arbiter)',
+      text: '👑 Supreme Master Arbiter online. I am supervising all 21 AI models across 4 deliberation phases. You can command me to abort lagging models, rotate keys, heal unformatted outputs, or force consensus synthesis.',
+      time: 'Ready'
+    }
+  ]);
   const [savedWorkspaces, setSavedWorkspaces] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [disabledSessionModels, setDisabledSessionModels] = useState<Record<string, boolean>>({});
@@ -633,6 +643,58 @@ export default function HomePage() {
     localStorage.setItem('active_debate_session_id', targetSessionId);
     setIsHistoryModalOpen(false);
     setActiveTab('arena');
+  };
+
+  const handleSendArbiterCommand = async (customCmd?: string) => {
+    const cmd = customCmd || arbiterCommandText.trim();
+    if (!cmd || !sessionId) {
+      if (!sessionId) alert('Please start or select a debate session first.');
+      return;
+    }
+    
+    setIsSendingArbiterCmd(true);
+    const userMsg = { sender: 'You (Fleet Commander)', text: cmd, time: new Date().toLocaleTimeString() };
+    setArbiterActionLogs((prev) => [...prev, userMsg]);
+    if (!customCmd) setArbiterCommandText('');
+
+    try {
+      const res = await fetch(`/api/debate/${sessionId}/arbiter/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmd })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setArbiterActionLogs((prev) => [
+          ...prev,
+          {
+            sender: `${data.arbiter_model || 'GPT 5.6 Sol'} (Master Arbiter)`,
+            text: data.response || 'Command executed.',
+            time: new Date().toLocaleTimeString()
+          }
+        ]);
+      } else {
+        setArbiterActionLogs((prev) => [
+          ...prev,
+          {
+            sender: 'System Alert',
+            text: `Error: ${data.detail || 'Failed to execute command.'}`,
+            time: new Date().toLocaleTimeString()
+          }
+        ]);
+      }
+    } catch (e: any) {
+      setArbiterActionLogs((prev) => [
+        ...prev,
+        {
+          sender: 'System Error',
+          text: `Network error: ${e.message}`,
+          time: new Date().toLocaleTimeString()
+        }
+      ]);
+    } finally {
+      setIsSendingArbiterCmd(false);
+    }
   };
 
   const handleToggleModelTurnOff = async (modelId: string) => {
@@ -2720,6 +2782,137 @@ export default function HomePage() {
                 className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 👑 MASTER ARBITER INTERACTIVE COMMAND CONSOLE */}
+      {isArbiterCommandOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-purple-500/50 shadow-2xl max-w-2xl w-full p-6 lg:p-8 space-y-4 max-h-[88vh] flex flex-col justify-between">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                  <Award className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    Command Master Arbiter (GPT 5.6 Sol)
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-black">
+                      ACTIVE SUPERVISOR
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Supreme Fleet Controller: Supervises all 21 models, auto-heals formats, and enforces consensus progression.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsArbiterCommandOpen(false)}
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* QUICK ACTION DIRECTIVE PILLS */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                1-Click Arbiter Commands:
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleSendArbiterCommand('Abort all lagging and stuck models and advance to verdict synthesis now')}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-xs font-bold border border-rose-200 dark:border-rose-800 transition flex items-center gap-1"
+                >
+                  <Zap className="w-3.5 h-3.5" /> ⚡ Abort Stuck Models & Advance
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendArbiterCommand('Auto-heal and convert all unformatted debater responses in this round into standard JSON schema')}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1"
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> 🔄 Auto-Heal Formats
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendArbiterCommand('Synthesize the final sovereign consensus verdict immediately with the completed fleet')}
+                  className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-xs font-bold border border-purple-200 dark:border-purple-800 transition flex items-center gap-1"
+                >
+                  <Award className="w-3.5 h-3.5" /> 🏆 Force Final Verdict Now
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendArbiterCommand('Re-enable and unquarantine all fleet models for the next round')}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-200 dark:border-emerald-800 transition flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> 🛠️ Re-enable All Models
+                </button>
+              </div>
+            </div>
+
+            {/* LIVE ARBITER DIALOGUE / LOGS */}
+            <div className="flex-1 overflow-y-auto space-y-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 max-h-64 font-mono text-xs">
+              {arbiterActionLogs.map((log, idx) => (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-xl space-y-1 ${
+                    log.sender.includes('You')
+                      ? 'bg-indigo-100/70 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 text-indigo-950 dark:text-indigo-200 ml-6'
+                      : 'bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-900/60 text-slate-800 dark:text-slate-200 mr-6 shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                    <span className={log.sender.includes('You') ? 'text-indigo-600 dark:text-indigo-400' : 'text-purple-600 dark:text-purple-400'}>
+                      {log.sender}
+                    </span>
+                    <span>{log.time}</span>
+                  </div>
+                  <div className="whitespace-pre-wrap leading-relaxed">
+                    {log.text}
+                  </div>
+                </div>
+              ))}
+              {isSendingArbiterCmd && (
+                <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-300 flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-purple-600" />
+                  <span>Master Arbiter GPT 5.6 Sol is executing your directive...</span>
+                </div>
+              )}
+            </div>
+
+            {/* NATURAL LANGUAGE COMMAND INPUT */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={arbiterCommandText}
+                onChange={(e) => setArbiterCommandText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendArbiterCommand();
+                  }
+                }}
+                placeholder="Command Arbiter in plain English (e.g. 'Abort GLM 5.2 and retry Nemotron on backup key for lower latency')..."
+                className="flex-1 px-4 py-3 rounded-xl border border-purple-300 dark:border-purple-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:outline-none shadow-xs"
+              />
+
+              <button
+                type="button"
+                onClick={() => handleSendArbiterCommand()}
+                disabled={isSendingArbiterCmd || !arbiterCommandText.trim()}
+                className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-black transition shadow-xs flex items-center gap-1.5 shrink-0"
+              >
+                {isSendingArbiterCmd ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+                <span>Send Command</span>
               </button>
             </div>
           </div>

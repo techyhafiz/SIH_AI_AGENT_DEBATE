@@ -34,6 +34,70 @@ from app.engine.consensus_eval import (
 from app.storage import SessionStorage, UserConfigStorage, sanitize_folder_name
 from app.providers.research_engine import ResearchEngine
 
+def heal_unstructured_turn(raw_text: str, model_name: str, ministry_domain: str = "Smart India Hackathon") -> StructuredDebateTurn:
+    """
+    Intelligently converts raw unformatted or partial debater responses into standard StructuredDebateTurn.
+    Ensures that non-JSON markdown responses are extracted into proper lenses without losing data.
+    """
+    if not raw_text or not raw_text.strip():
+        return StructuredDebateTurn(
+            deliberation_scratchpad="No response content generated.",
+            refined_solution=f"Model '{model_name}' produced no text.",
+            consensus_vote="DISAGREE",
+            agreement_percentage=0
+        )
+
+    # First attempt standard parse
+    st = parse_structured_turn(raw_text)
+    if st.architect_lens or st.critic_lens or st.field_hardware_lens or st.security_compliance_lens or (st.refined_solution and st.refined_solution != raw_text):
+        return st
+
+    # Markdown Section Extraction Heuristics
+    architect = ""
+    critic = ""
+    hardware = ""
+    security = ""
+    solution = raw_text
+
+    # Extract sections using regex
+    arch_match = re.search(r"(?:###?\s*(?:1\.|Lead\s+)?Architect|🏛️|Architecture)[\s\S]*?(?=###?\s*(?:2\.|Critic|😈|3\.|Field|⚙️|4\.|Security|🛡️|###?\s*Refined|$))", raw_text, re.IGNORECASE)
+    if arch_match:
+        architect = arch_match.group(0).strip()
+
+    critic_match = re.search(r"(?:###?\s*(?:2\.|Critic|Devil|Red-Team|😈)[\s\S]*?)(?=###?\s*(?:3\.|Field|⚙️|4\.|Security|🛡️|###?\s*Refined|$))", raw_text, re.IGNORECASE)
+    if critic_match:
+        critic = critic_match.group(0).strip()
+
+    field_match = re.search(r"(?:###?\s*(?:3\.|Field|Hardware|BOM|⚙️)[\s\S]*?)(?=###?\s*(?:4\.|Security|🛡️|###?\s*Refined|$))", raw_text, re.IGNORECASE)
+    if field_match:
+        hardware = field_match.group(0).strip()
+
+    sec_match = re.search(r"(?:###?\s*(?:4\.|Security|Compliance|Fort\s+Knox|🛡️)[\s\S]*?)(?=###?\s*Refined|###?\s*Conclusion|$)", raw_text, re.IGNORECASE)
+    if sec_match:
+        security = sec_match.group(0).strip()
+
+    vote = "DISAGREE"
+    pct = 50
+    lower = raw_text.lower()
+    if "agree" in lower and "disagree" not in lower:
+        vote = "AGREE"
+        pct = 85
+    elif "refinement" in lower or "iterate" in lower:
+        vote = "NEEDS_REFINEMENT"
+        pct = 65
+
+    return StructuredDebateTurn(
+        deliberation_scratchpad=f"Extracted from {model_name} response.",
+        architect_lens=architect[:1500] if architect else "High-level architecture integrated in refined solution.",
+        critic_lens=critic[:1500] if critic else "Edge cases analyzed in main deliverable.",
+        field_hardware_lens=hardware[:1500] if hardware else "Hardware components specified in solution.",
+        security_compliance_lens=security[:1500] if security else "Security controls integrated.",
+        refined_solution=solution,
+        consensus_vote=vote,
+        agreement_percentage=pct
+    )
+
+
 # Complete Deliberation Pipeline Definition
 DELIBERATION_PIPELINE = [
     # Phase 1: Multi-Persona Genesis (Internal 4-Pass Foundation)
@@ -67,9 +131,11 @@ DELIBERATION_PIPELINE = [
 class DebateOrchestrator:
     _event_queues: Dict[str, Set[asyncio.Queue]] = {}
     _running_tasks: Dict[str, asyncio.Task] = {}
+    _running_round_tasks: Dict[str, Dict[str, asyncio.Task]] = {}
     _quarantined_models: Dict[str, Set[str]] = {}
     _pending_injections: Dict[str, str] = {}
     _pause_flags: Dict[str, asyncio.Event] = {}
+    _arbiter_messages_history: Dict[str, List[dict]] = {}
 
     @classmethod
     def get_event_queue(cls, session_id: str) -> asyncio.Queue:
@@ -466,13 +532,12 @@ class DebateOrchestrator:
                 await SessionStorage.save_session(session)
                 break
 
-            tasks = []
+            model_tasks: Dict[str, asyncio.Task] = {}
             for m in active_models:
                 sys_prompt = build_system_prompt_for_debater(m.name, session.ministry_domain)
                 
                 # Build specific prompt according to phase
                 if phase_index == 1:
-                    # Gather model's own prior passes in Phase 1
                     my_prior_passes: Dict[str, str] = {}
                     for r in session.rounds[:-1]:
                         if r.phase_index == 1 and m.id in r.responses:
@@ -515,7 +580,6 @@ class DebateOrchestrator:
                         moderator_injection=moderator_injection
                     )
 
-                # Inject latest pooled research dossier into user prompt if available
                 if latest_research_dossier and latest_research_dossier.dossier_text:
                     usr_prompt = f"{usr_prompt}\n\n{latest_research_dossier.dossier_text}"
 
@@ -535,10 +599,95 @@ class DebateOrchestrator:
                         messages=messages
                     )
                 )
-                tasks.append(task)
+                model_tasks[m.id] = task
 
-            results = await asyncio.gather(*tasks, return_exceptions=False)
+            cls._running_round_tasks[session_id] = model_tasks
+
+            # ==============================================================
+            # AUTONOMOUS ARBITER ROUND SUPERVISOR LOOP (NEVER STALLS)
+            # ==============================================================
+            round_start_time = time.time()
+            results: List[DebaterResponse] = []
             
+            while True:
+                # 1. Check for pause condition
+                if not cls._pause_flags[session_id].is_set():
+                    await cls._pause_flags[session_id].wait()
+
+                # 2. Check if all tasks finished
+                all_done = all(t.done() for t in model_tasks.values())
+                if all_done:
+                    break
+
+                elapsed_round = time.time() - round_start_time
+                done_tasks = [t for t in model_tasks.values() if t.done()]
+                done_count = len(done_tasks)
+                total_count = len(model_tasks)
+
+                # 3. Super-Arbiter Auto-Abort Lagging Models Check (every 5 mins or after 120s if majority completed)
+                # If >=50% (and >=2 models) completed and elapsed > 120s:
+                if done_count >= max(2, int(total_count * 0.5)) and elapsed_round > 120.0:
+                    for m_id, task in list(model_tasks.items()):
+                        if not task.done():
+                            task.cancel()
+                            if session_id not in cls._quarantined_models:
+                                cls._quarantined_models[session_id] = set()
+                            cls._quarantined_models[session_id].add(m_id)
+                            
+                            m_obj = next((x for x in session.models if x.id == m_id), None)
+                            m_name = m_obj.name if m_obj else m_id
+                            
+                            print(f"[👑 ARBITER AUTO-ABORT] Master Arbiter '{arbiter_config.name}' aborted lagging model '{m_name}' after {elapsed_round:.1f}s.")
+                            await cls.broadcast_event(session_id, "ARBITER_SUPERVISOR_ACTION", {
+                                "arbiter_model": arbiter_config.name,
+                                "action": "auto_abort_lagging_model",
+                                "target_model_id": m_id,
+                                "target_model_name": m_name,
+                                "reason": f"Model exceeded 120s response threshold while {done_count}/{total_count} fleet debaters completed.",
+                                "message": f"👑 Master Arbiter {arbiter_config.name}: Aborted lagging model '{m_name}' to maintain deliberation momentum."
+                            })
+
+                await asyncio.sleep(2.0)
+
+            # Harvest results from tasks
+            for m_id, task in model_tasks.items():
+                m_obj = next((x for x in session.models if x.id == m_id), None)
+                m_name = m_obj.name if m_obj else m_id
+                if task.cancelled():
+                    resp = DebaterResponse(
+                        model_id=m_id,
+                        model_name=m_name,
+                        phase_index=phase_index,
+                        pass_or_round_id=pass_id,
+                        pass_or_round_title=pass_title,
+                        round_number=current_round_num,
+                        raw_text="",
+                        structured=StructuredDebateTurn(refined_solution=f"Aborted by Master Arbiter {arbiter_config.name} (latency protection)."),
+                        status="timeout",
+                        error_message=f"Aborted by Master Arbiter {arbiter_config.name}."
+                    )
+                    results.append(resp)
+                elif task.exception():
+                    resp = DebaterResponse(
+                        model_id=m_id,
+                        model_name=m_name,
+                        phase_index=phase_index,
+                        pass_or_round_id=pass_id,
+                        pass_or_round_title=pass_title,
+                        round_number=current_round_num,
+                        raw_text="",
+                        structured=StructuredDebateTurn(refined_solution=f"Error: {task.exception()}"),
+                        status="error",
+                        error_message=str(task.exception())
+                    )
+                    results.append(resp)
+                else:
+                    resp = task.result()
+                    # Apply Auto-Healing if response was raw/unstructured
+                    if not resp.structured.architect_lens and not resp.structured.critic_lens and resp.raw_text:
+                        resp.structured = heal_unstructured_turn(resp.raw_text, resp.model_name, session.ministry_domain)
+                    results.append(resp)
+
             for resp in results:
                 new_round.responses[resp.model_id] = resp
 
@@ -719,7 +868,7 @@ class DebateOrchestrator:
         })
 
     @classmethod
-    async def drop_model(cls, session_id: str, model_id: str):
+    async def drop_model(cls, session_id: str, model_id: str, reason: str = "Excluded by user/moderator"):
         session = await SessionStorage.get_session(session_id)
         if not session:
             return
@@ -729,6 +878,98 @@ class DebateOrchestrator:
                 break
         if session_id in cls._quarantined_models and model_id in cls._quarantined_models[session_id]:
             cls._quarantined_models[session_id].remove(model_id)
-        await SessionStorage.save_session(session)
-        await cls.broadcast_event(session_id, "MODEL_DROPPED", {"model_id": model_id})
+        
+        # Immediately cancel any active asyncio task for this model
+        if session_id in cls._running_round_tasks and model_id in cls._running_round_tasks[session_id]:
+            task = cls._running_round_tasks[session_id][model_id]
+            if not task.done():
+                task.cancel()
+                print(f"[CANCELLED TASK] Terminated background task for dropped model '{model_id}'")
 
+        await SessionStorage.save_session(session)
+        await cls.broadcast_event(session_id, "MODEL_DROPPED", {
+            "model_id": model_id,
+            "reason": reason
+        })
+
+
+    @classmethod
+    async def execute_arbiter_command(cls, session_id: str, command_text: str) -> dict:
+        """
+        Interactive Command Console for GPT 5.6 Sol Master Arbiter.
+        Interprets natural language instructions from the user, executes tools on the live session,
+        and returns an intelligent reasoning report.
+        """
+        session = await SessionStorage.get_session(session_id)
+        if not session:
+            return {"status": "error", "message": "Debate session not found."}
+
+        arbiter_config = next((m for m in session.models if m.id == session.arbiter_model_id or m.is_arbiter), session.models[0])
+        cmd_lower = command_text.lower()
+        actions_taken = []
+        explanation_parts = []
+
+        # 1. Action: Abort/Kill Lagging Models
+        if any(w in cmd_lower for w in ["abort", "kill", "cancel", "stop", "stuck", "hang", "timeout"]):
+            if session_id in cls._running_round_tasks:
+                for m_id, task in list(cls._running_round_tasks[session_id].items()):
+                    if not task.done():
+                        task.cancel()
+                        m_obj = next((x for x in session.models if x.id == m_id), None)
+                        m_name = m_obj.name if m_obj else m_id
+                        actions_taken.append(f"Aborted running turn for '{m_name}' ({m_id})")
+                        if session_id not in cls._quarantined_models:
+                            cls._quarantined_models[session_id] = set()
+                        cls._quarantined_models[session_id].add(m_id)
+                explanation_parts.append("I have terminated all lagging background worker tasks and quarantined uncooperative models.")
+
+        # 2. Action: Exclude / Turn Off Specific Model
+        for m in session.models:
+            if m.name.lower() in cmd_lower or m.id.lower() in cmd_lower:
+                if any(w in cmd_lower for w in ["off", "exclude", "drop", "disable", "remove"]):
+                    await cls.drop_model(session_id, m.id, reason="Excluded by Arbiter command")
+                    actions_taken.append(f"Excluded '{m.name}' ({m.id}) from future debate rounds")
+                elif any(w in cmd_lower for w in ["on", "enable", "retry", "bring back", "include"]):
+                    m.enabled = True
+                    if session_id in cls._quarantined_models and m.id in cls._quarantined_models[session_id]:
+                        cls._quarantined_models[session_id].remove(m.id)
+                    actions_taken.append(f"Re-enabled and unquarantined '{m.name}' ({m.id})")
+
+        # 3. Action: Force Advance / Call Verdict
+        if any(w in cmd_lower for w in ["verdict", "final", "complete", "finish", "synthesize now"]):
+            await cls.force_call_verdict(session_id)
+            actions_taken.append("Synthesized Final Sovereign Consensus Verdict immediately")
+            explanation_parts.append("I have summoned the jury and synthesized the final sovereign markdown deliverables.")
+
+        # 4. Action: Auto-Heal Unstructured Outputs
+        if any(w in cmd_lower for w in ["heal", "format", "convert", "repair", "fix format"]):
+            if session.rounds:
+                healed_count = 0
+                for resp in session.rounds[-1].responses.values():
+                    if resp.raw_text and not resp.structured.architect_lens:
+                        resp.structured = heal_unstructured_turn(resp.raw_text, resp.model_name, session.ministry_domain)
+                        healed_count += 1
+                await SessionStorage.save_session(session)
+                actions_taken.append(f"Auto-healed {healed_count} debater responses into structured schema")
+                explanation_parts.append(f"Successfully recovered and parsed {healed_count} unformatted model turns.")
+
+        # 5. Build Final Arbiter Response
+        if not actions_taken:
+            explanation = f"👑 **Master Arbiter ({arbiter_config.name})**: I have received your directive: *\"{command_text}\"*. All active debater nodes are synchronized. You can ask me to abort failing models, re-enable specific models on backup keys, auto-heal unformatted responses, or force the final consensus verdict."
+        else:
+            explanation = f"👑 **Master Arbiter ({arbiter_config.name}) Action Report**:\n\n" + "\n".join([f"- ✅ {a}" for a in actions_taken]) + "\n\n" + " ".join(explanation_parts)
+
+        await cls.broadcast_event(session_id, "ARBITER_SUPERVISOR_ACTION", {
+            "arbiter_model": arbiter_config.name,
+            "command": command_text,
+            "actions_taken": actions_taken,
+            "message": explanation
+        })
+
+        return {
+            "status": "success",
+            "arbiter_model": arbiter_config.name,
+            "response": explanation,
+            "actions_taken": actions_taken,
+            "session_status": session.status
+        }

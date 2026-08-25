@@ -4,6 +4,7 @@ import json
 import time
 import httpx
 from typing import Optional, List, Dict, Any
+from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -705,6 +706,18 @@ async def handle_moderator_action(session_id: str, req: ModeratorActionRequest):
         await DebateOrchestrator.drop_model(session_id, req.target_model_id)
 
     return {"status": "success", "action": req.action}
+
+class ArbiterCommandRequest(BaseModel):
+    command: str
+
+@app.post("/api/debate/{session_id}/arbiter/command")
+async def handle_arbiter_command(session_id: str, req: ArbiterCommandRequest):
+    session = await SessionStorage.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Debate session not found.")
+    if not req.command or not req.command.strip():
+        raise HTTPException(status_code=400, detail="Command text is required.")
+    return await DebateOrchestrator.execute_arbiter_command(session_id, req.command.strip())
 
 @app.get("/api/workspaces")
 async def list_all_workspaces():
