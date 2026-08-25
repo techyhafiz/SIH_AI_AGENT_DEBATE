@@ -834,60 +834,111 @@ export default function HomePage() {
           </div>
 
           {/* Quick Action Controls */}
-          <div className="flex items-center gap-2.5 w-full md:w-auto justify-end overflow-x-auto pb-1 md:pb-0">
+          <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-x-auto pb-1 md:pb-0 flex-wrap">
+            {/* 👑 Command Master Arbiter Button */}
+            <button
+              type="button"
+              onClick={() => setIsArbiterCommandOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black transition shadow-md shadow-purple-500/20 animate-pulse shrink-0"
+              title="Command Supreme Master Arbiter (GPT 5.6 Sol)"
+            >
+              <Award className="w-4 h-4 text-amber-300" />
+              <span>👑 Command Arbiter</span>
+            </button>
+
+            {/* 📂 Session History Button */}
+            <button
+              type="button"
+              onClick={handleOpenHistory}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition border border-slate-200 dark:border-slate-700 shadow-xs shrink-0"
+              title="Browse & Resume Saved Debate Workspaces"
+            >
+              <History className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>📂 History</span>
+              {savedWorkspaces.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-extrabold">
+                  {savedWorkspaces.length}
+                </span>
+              )}
+            </button>
+
+            {/* Active Session Live Controls */}
             {sessionId ? (
               <>
+                {/* 🔍 Ask Arbiter to Check Fleet */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSendArbiterCommand("Scan all fleet models right now, diagnose hanging or failing nodes, report latencies, and optimize execution.");
+                    setIsArbiterCommandOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-950/80 hover:bg-purple-100 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-bold shadow-xs transition shrink-0"
+                  title="Ask Master Arbiter (GPT 5.6 Sol) to inspect all fleet nodes"
+                >
+                  <Activity className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  <span className="hidden sm:inline">🔍 Check Fleet</span>
+                </button>
+
                 {currentStatus === 'running' ? (
                   <button
+                    type="button"
                     onClick={() => sendModeratorAction('pause')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 text-xs font-bold shadow-sm transition"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/80 hover:bg-amber-100 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800 text-xs font-black shadow-xs transition shrink-0"
+                    title="Pause Deliberation"
                   >
-                    <Pause className="w-3.5 h-3.5" /> Pause
+                    <Pause className="w-3.5 h-3.5" /> <span>⏸️ Pause</span>
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => sendModeratorAction('resume')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md shadow-emerald-500/20 transition ring-2 ring-emerald-400/40 shrink-0"
+                    title="Resume Deliberation"
                   >
-                    <Play className="w-3.5 h-3.5 fill-current" /> Resume
+                    <Play className="w-3.5 h-3.5 fill-current" /> <span>▶️ Resume</span>
                   </button>
                 )}
 
                 <button
+                  type="button"
                   onClick={() => setIsInjectModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold transition"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold transition shrink-0"
                   title="Inject moderator direction"
                 >
-                  <MessageSquarePlus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> Inject Directive
+                  <MessageSquarePlus className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> <span className="hidden sm:inline">Inject</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => sendModeratorAction('call_verdict')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-800 text-xs font-bold transition"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-800 text-xs font-bold transition shrink-0"
                   title="Force Master Arbiter Sovereign Deliverable"
                 >
-                  <Award className="w-3.5 h-3.5" /> Final Verdict
+                  <Award className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Final Verdict</span>
                 </button>
               </>
             ) : null}
 
             {/* Quick Setup Wizard Button */}
             <button
+              type="button"
               onClick={() => {
                 setWizardFlowState('initial_choice');
                 setCardIndex(0);
                 setIsWizardOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm transition"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition shrink-0"
             >
-              <Wand2 className="w-3.5 h-3.5" /> API Key Setup Wizard
+              <Wand2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Setup Wizard</span>
             </button>
 
+            {/* Start Deliberation Button */}
             <button
+              type="button"
               onClick={() => setIsStartModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 transition"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black shadow-md shadow-indigo-500/20 transition shrink-0"
             >
-              <Sparkles className="w-3.5 h-3.5" /> Start Deliberation
+              <Sparkles className="w-3.5 h-3.5" /> <span>Start Deliberation</span>
             </button>
           </div>
         </div>
@@ -969,9 +1020,9 @@ export default function HomePage() {
       </header>
 
       {/* ========================================================================= */}
-      {/* 2. PROMINENT LIVE STATUS TICKER */}
+      {/* 2. PROMINENT LIVE STATUS TICKER & 13-STEP PIPELINE STEPPER */}
       {/* ========================================================================= */}
-      <section className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 lg:px-8 py-3 shadow-sm">
+      <section className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 lg:px-8 py-3.5 shadow-sm space-y-3">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
           
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -987,7 +1038,7 @@ export default function HomePage() {
               <span className={`w-2 h-2 rounded-full ${
                 currentStatus === 'running' ? 'bg-emerald-500 animate-pulse' : currentStatus === 'paused' ? 'bg-amber-500' : currentStatus === 'completed' ? 'bg-purple-500' : 'bg-slate-400'
               }`} />
-              {currentStatus}
+              {currentStatus === 'running' ? '🟢 LIVE DEBATE' : currentStatus === 'paused' ? '⏸️ PAUSED' : currentStatus === 'completed' ? '🏆 COMPLETED' : 'READY'}
             </span>
 
             <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-snug">
@@ -995,12 +1046,78 @@ export default function HomePage() {
             </p>
           </div>
 
-          {currentRound?.arbiter_eval && (
-            <div className="flex items-center gap-2 bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 px-3 py-1 rounded-xl text-purple-900 dark:text-purple-200 text-xs font-bold shrink-0">
-              <span>Consensus Score:</span>
-              <span className="text-sm font-black text-purple-700 dark:text-purple-300">{currentRound.arbiter_eval.consensus_score}%</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Fleet Health Check Button */}
+            <button
+              type="button"
+              onClick={() => {
+                handleSendArbiterCommand("Scan all fleet models right now, diagnose hanging or failing nodes, report latencies, and optimize execution.");
+                setIsArbiterCommandOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/80 hover:bg-purple-100 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-bold transition flex items-center gap-1.5"
+            >
+              <Activity className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <span>🔍 Check Fleet Health</span>
+            </button>
+
+            {currentRound?.arbiter_eval && (
+              <div className="flex items-center gap-1.5 bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 px-3 py-1.5 rounded-xl text-purple-900 dark:text-purple-200 text-xs font-bold">
+                <span>Consensus:</span>
+                <span className="text-sm font-black text-purple-700 dark:text-purple-300">{currentRound.arbiter_eval.consensus_score}%</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 13-STEP INTERACTIVE DELIBERATION PIPELINE STEPPER */}
+        <div className="max-w-7xl mx-auto pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0 mr-1.5">
+              Gauntlet Pipeline:
+            </span>
+            {PIPELINE_STEPS.map((step, idx) => {
+              const roundIndex = session?.rounds ? session.rounds.findIndex((r) => r.pass_or_round_id === step.id) : -1;
+              const isCompleted = roundIndex !== -1 && !!session?.rounds?.[roundIndex]?.completed_at;
+              const isCurrent = session?.current_pass_id === step.id || (!isCompleted && session?.rounds && idx === session.rounds.length);
+              const roundObj = (session?.rounds && roundIndex !== -1) ? session.rounds[roundIndex] : null;
+              const consensus = roundObj?.arbiter_eval?.consensus_score;
+
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => {
+                    if (roundIndex !== -1) {
+                      setSelectedRoundIndex(roundIndex);
+                      setActiveTab('arena');
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition flex items-center gap-1.5 shrink-0 ${
+                    isCurrent
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25 ring-2 ring-indigo-400/40 animate-pulse'
+                      : isCompleted
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 cursor-pointer'
+                      : 'bg-slate-100 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60'
+                  }`}
+                  title={step.title}
+                >
+                  {isCompleted ? (
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  ) : isCurrent ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                  ) : (
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                  <span>{step.short}</span>
+                  {consensus ? (
+                    <span className="px-1.5 py-0.2 rounded-full bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 text-[10px] font-black">
+                      {consensus}%
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
