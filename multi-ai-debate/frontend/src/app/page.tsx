@@ -11,6 +11,7 @@ import {
   ResearchDossierItem
 } from '@/types/debate';
 import { useDebateStream } from '@/hooks/useDebateStream';
+import DEFAULT_PS_DATA from '@/data/extracted_problem_statements.json';
 import {
   Bot,
   Layers,
@@ -204,7 +205,7 @@ export default function HomePage() {
   const [ministryDomain, setMinistryDomain] = useState('Smart India Hackathon (General)');
   const [additionalPrompt, setAdditionalPrompt] = useState('');
   const [autoAdvance, setAutoAdvance] = useState(true);
-  const [psList, setPsList] = useState<any[]>([]);
+  const [psList, setPsList] = useState<any[]>(Array.isArray(DEFAULT_PS_DATA) ? DEFAULT_PS_DATA : []);
   const [psFilter, setPsFilter] = useState('');
   const [selectedPsObj, setSelectedPsObj] = useState<any | null>(null);
   const [psCategoryFilter, setPsCategoryFilter] = useState<'All' | 'Software' | 'Hardware'>('All');
