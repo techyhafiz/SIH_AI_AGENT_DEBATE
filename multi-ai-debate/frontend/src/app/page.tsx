@@ -2232,11 +2232,17 @@ export default function HomePage() {
             </div>
 
             {/* SIH PROBLEM STATEMENT SELECTOR / SEARCH */}
-            <div className="space-y-3 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+            <div className="space-y-3 p-4 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5" /> SIH Problem Statements Database ({psList.length > 0 ? `${psList.length} Loaded` : 'Loading...'})
-                </label>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[11px] font-black uppercase tracking-wider flex items-center gap-1">
+                    <Database className="w-3.5 h-3.5" /> SIH Database
+                  </span>
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    {psList.length > 0 ? `${psList.length} Official Statements Available` : 'Loading statements...'}
+                  </span>
+                </div>
+
                 {selectedPsObj && (
                   <button
                     type="button"
@@ -2245,57 +2251,24 @@ export default function HomePage() {
                       setProblemStatement('');
                       setPsCode('');
                       setMinistryDomain('Smart India Hackathon (General)');
-                      setIsPsDropdownOpen(true);
                     }}
-                    className="text-[11px] font-bold text-rose-500 hover:underline flex items-center gap-1"
+                    className="text-xs font-bold text-rose-500 hover:text-rose-600 flex items-center gap-1 transition"
                   >
-                    <X className="w-3 h-3" /> Clear Selection
+                    <X className="w-3.5 h-3.5" /> Clear Selected
                   </button>
                 )}
               </div>
 
-              {/* ACTIVE SELECTED STATEMENT PREVIEW CARD */}
-              {selectedPsObj ? (
-                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-indigo-500/40 shadow-xs space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-600 text-white shadow-xs">
-                        {selectedPsObj.ps_code || selectedPsObj.ps_id}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                        {selectedPsObj.category || 'Software'} · {selectedPsObj.theme || 'General'}
-                      </span>
-                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-xs">
-                        🏢 {selectedPsObj.organization}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsPsDropdownOpen(!isPsDropdownOpen)}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition shrink-0"
-                    >
-                      {isPsDropdownOpen ? 'Close Search ▲' : 'Change PS ↺'}
-                    </button>
-                  </div>
-
-                  <h4 className="text-xs font-extrabold text-slate-900 dark:text-white leading-snug">
-                    {selectedPsObj.title}
-                  </h4>
-                </div>
-              ) : null}
-
-              {/* SEARCH & FILTER CONTROLS */}
-              {(!selectedPsObj || isPsDropdownOpen) && (
-                <div className="space-y-2">
-                  {/* Category Pills & Search Input */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
+              {/* SEARCH & CATEGORY FILTER */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
                     {(['All', 'Software', 'Hardware'] as const).map((cat) => (
                       <button
                         key={cat}
                         type="button"
                         onClick={() => setPsCategoryFilter(cat)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                        className={`px-3 py-1 rounded-xl text-xs font-black transition ${
                           psCategoryFilter === cat
                             ? 'bg-indigo-600 text-white shadow-xs'
                             : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -2306,74 +2279,110 @@ export default function HomePage() {
                     ))}
                   </div>
 
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={psFilter}
-                      onFocus={() => setIsPsDropdownOpen(true)}
-                      onChange={(e) => {
-                        setPsFilter(e.target.value);
-                        setIsPsDropdownOpen(true);
-                      }}
-                      placeholder="Search by code (e.g. 26001), keyword (e.g. landslide, radar, AI), or ministry..."
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none pr-8"
-                    />
-                    {psFilter && (
-                      <button
-                        type="button"
-                        onClick={() => setPsFilter('')}
-                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Showing {filteredPs.length} matches (Click any to select)
+                  </span>
+                </div>
 
-                  {/* SEARCH RESULTS DROPDOWN */}
-                  <div className="max-h-52 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 shadow-lg">
-                    {filteredPs.length > 0 ? (
-                      filteredPs.map((ps, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => {
-                            setSelectedPsObj(ps);
-                            setPsCode(ps.ps_code || ps.ps_id || '');
-                            setMinistryDomain(ps.organization || ps.department || ps.theme || 'Smart India Hackathon');
-                            const formatted = `[${ps.ps_code || ps.ps_id}] ${ps.title}\n\nOrganization: ${ps.organization}\nTheme: ${ps.theme} | Category: ${ps.category}\n\nProblem Description:\n${ps.description}\n\nExpected Solution Deliverables:\n${ps.expected_solution || ''}`;
-                            setProblemStatement(formatted);
-                            setIsPsDropdownOpen(false);
-                          }}
-                          className="p-3 text-left text-xs hover:bg-indigo-50/70 dark:hover:bg-indigo-950/60 cursor-pointer transition flex flex-col gap-1 group"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                                {ps.ps_code || ps.ps_id}
-                              </span>
-                              <span className="text-[10px] font-bold text-slate-400">
-                                {ps.category} · {ps.theme}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold opacity-0 group-hover:opacity-100 transition">
-                              Select ➔
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={psFilter}
+                    onChange={(e) => setPsFilter(e.target.value)}
+                    placeholder="Search 226 statements by code (26001), keyword (landslide, AI, drone), ministry..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none pr-8 shadow-xs"
+                  />
+                  {psFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setPsFilter('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* INTERACTIVE PS LIST */}
+              <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 shadow-xs">
+                {filteredPs.length > 0 ? (
+                  filteredPs.map((ps, idx) => {
+                    const isSelected = selectedPsObj && (selectedPsObj.ps_code === ps.ps_code || selectedPsObj.ps_id === ps.ps_id);
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setSelectedPsObj(ps);
+                          setPsCode(ps.ps_code || ps.ps_id || '');
+                          setMinistryDomain(ps.organization || ps.department || ps.theme || 'Smart India Hackathon');
+                          const formatted = `[${ps.ps_code || ps.ps_id}] ${ps.title}\n\nOrganization: ${ps.organization}\nTheme: ${ps.theme} | Category: ${ps.category}\n\nProblem Description:\n${ps.description}\n\nExpected Solution Deliverables:\n${ps.expected_solution || ''}`;
+                          setProblemStatement(formatted);
+                        }}
+                        className={`p-3 text-left text-xs cursor-pointer transition flex flex-col gap-1.5 ${
+                          isSelected
+                            ? 'bg-indigo-50 dark:bg-indigo-950/80 border-l-4 border-indigo-600'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                              isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 border border-slate-200 dark:border-slate-700'
+                            }`}>
+                              {ps.ps_code || ps.ps_id}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              {ps.category} · {ps.theme}
+                            </span>
+                            <span className="text-[10px] text-slate-400 truncate max-w-xs">
+                              · 🏢 {ps.organization}
                             </span>
                           </div>
 
-                          <div className="font-bold text-slate-900 dark:text-white leading-tight">
-                            {ps.title}
-                          </div>
-
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
-                            {ps.description}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isSelected ? (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-black flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3 text-emerald-600" /> SELECTED
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 opacity-80 hover:opacity-100">
+                                Click to Select ➔
+                              </span>
+                            )}
                           </div>
                         </div>
-                      ))
-                    ) : (
-                      <div className="p-4 text-center text-xs text-slate-400">
-                        No SIH problem statements matched "{psFilter}". You can enter custom text below.
+
+                        <div className="font-extrabold text-slate-900 dark:text-white leading-snug">
+                          {ps.title}
+                        </div>
+
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                          {ps.description}
+                        </div>
                       </div>
-                    )}
+                    );
+                  })
+                ) : (
+                  <div className="p-6 text-center text-xs text-slate-400 space-y-1">
+                    <p>No SIH problem statements found matching "{psFilter}".</p>
+                    <p className="text-[11px]">Try searching with a shorter keyword or switch category to 'All'.</p>
                   </div>
+                )}
+              </div>
+
+              {/* ACTIVE SELECTION SUMMARY BANNER */}
+              {selectedPsObj && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="text-xs font-extrabold text-emerald-950 dark:text-emerald-200 truncate">
+                      Selected: [{selectedPsObj.ps_code || selectedPsObj.ps_id}] {selectedPsObj.title}
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 text-[10px] font-black shrink-0">
+                    READY TO LAUNCH
+                  </span>
                 </div>
               )}
             </div>
