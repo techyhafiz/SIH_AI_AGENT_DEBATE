@@ -1,9 +1,9 @@
 # ====================================================================
-# Multi-AI Debate Arena - Dual Application Startup Launcher
+# AI Consensus Arena (SIH Super-Architecture) - Startup Launcher
 # ====================================================================
 
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host " Starting Multi-AI Debate Arena System" -ForegroundColor Cyan
+Write-Host " Starting AI Consensus Arena (Super-Architecture)" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 
 $RootPath = $PSScriptRoot
@@ -38,27 +38,26 @@ try {
 Write-Host "  OK: Ports 8000 and 3000 are clean." -ForegroundColor Green
 
 Write-Host ""
-Write-Host "[2/4] Launching Backend & App #1 on http://localhost:8000..." -ForegroundColor Yellow
+Write-Host "[2/4] Starting FastAPI Backend API Engine on port 8000..." -ForegroundColor Yellow
 $BackendCmd = "Set-Location -Path '$BackendPath'; python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "$BackendCmd" -WindowStyle Normal
 
 Write-Host ""
-Write-Host "[3/4] Launching App #2 (Advanced Next.js Edition) on http://localhost:3000..." -ForegroundColor Yellow
+Write-Host "[3/4] Starting Next.js Web App on port 3000..." -ForegroundColor Yellow
 $FrontendCmd = "Set-Location -Path '$FrontendPath'; npm run dev"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "$FrontendCmd" -WindowStyle Normal
 
 Write-Host ""
-Write-Host "[4/4] Waiting 4 seconds for servers to initialize..." -ForegroundColor Yellow
+Write-Host "[4/4] Waiting 4 seconds for services to initialize..." -ForegroundColor Yellow
 Start-Sleep -Seconds 4
 
 Write-Host ""
-Write-Host "Opening AI Consensus Arena UI..." -ForegroundColor Green
+Write-Host "Opening AI Consensus Arena on http://localhost:3000 ..." -ForegroundColor Green
 Start-Process "http://localhost:3000"
 
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Green
-Write-Host " BOTH APPLICATIONS ARE RUNNING!" -ForegroundColor Green
-Write-Host "    - App #2 (Advanced Next.js Edition): http://localhost:3000" -ForegroundColor White
-Write-Host "    - App #1 (Original Standalone Edition): http://localhost:8000" -ForegroundColor White
+Write-Host " AI CONSENSUS ARENA IS LIVE!" -ForegroundColor Green
+Write-Host "    - Web Application: http://localhost:3000" -ForegroundColor White
 Write-Host "    - Backend API & Docs: http://localhost:8000/docs" -ForegroundColor White
 Write-Host "========================================================" -ForegroundColor Green

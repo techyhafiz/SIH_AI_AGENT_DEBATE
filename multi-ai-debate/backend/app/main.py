@@ -42,10 +42,12 @@ if os.path.exists(STATIC_DIR):
 
 @app.get("/")
 async def serve_index():
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"message": "Multi-AI Debate Engine API is active."}
+    return {
+        "service": "AI Consensus Arena (SIH Super-Architecture) API Engine",
+        "status": "online",
+        "web_app": "http://localhost:3000",
+        "api_docs": "http://localhost:8000/docs"
+    }
 
 @app.get("/health")
 async def health_check():
