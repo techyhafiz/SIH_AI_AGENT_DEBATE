@@ -28,3 +28,10 @@ multi-ai-debate/backend/data/user_config.json
 multi-ai-debate/backend/data/research_config.json
 multi-ai-debate/backend/data/workspaces/
 multi-ai-debate/backend/data/sessions/
+user_config_backup.json
+research_config_backup.json
+MASTER_KEYS_CONFIG.json
+*_backup*.json
+*config*.json
+debate_insights_report.html
+SIH_Master_Consensus_Verdict_*.md

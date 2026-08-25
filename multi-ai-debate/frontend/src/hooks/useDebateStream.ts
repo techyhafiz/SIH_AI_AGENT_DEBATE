@@ -56,6 +56,10 @@ export function useDebateStream(sessionId: string | null) {
         if (exists) return prev;
         const newRound: RoundData = {
           round_number: data.round_number,
+          phase_index: data.phase_index || prev.current_phase_index || 1,
+          phase_title: data.phase_title || prev.current_phase_title || 'Deliberation',
+          pass_or_round_id: data.pass_id,
+          pass_or_round_title: data.pass_title,
           responses: {},
           moderator_injection: data.moderator_injection,
           started_at: Date.now() / 1000,
@@ -63,7 +67,35 @@ export function useDebateStream(sessionId: string | null) {
         return {
           ...prev,
           current_round_num: data.round_number,
+          current_phase_index: data.phase_index || prev.current_phase_index,
+          current_phase_title: data.phase_title || prev.current_phase_title,
+          current_pass_id: data.pass_id || prev.current_pass_id,
+          current_pass_title: data.pass_title || prev.current_pass_title,
           rounds: [...prev.rounds, newRound],
+        };
+      });
+    });
+
+    es.addEventListener('RESEARCH_BLOCK_START', (e: MessageEvent) => {
+      const data = JSON.parse(e.data);
+      setSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          current_phase_index: data.phase_index,
+          current_pass_id: data.pass_id,
+          current_pass_title: data.pass_title,
+        };
+      });
+    });
+
+    es.addEventListener('RESEARCH_DOSSIER_UPDATED', (e: MessageEvent) => {
+      const data = JSON.parse(e.data);
+      setSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          latest_research_dossier: data.dossier || data,
         };
       });
     });
@@ -90,6 +122,9 @@ export function useDebateStream(sessionId: string | null) {
             const resp: DebaterResponse = {
               model_id: data.model_id,
               model_name: data.model_name,
+              phase_index: data.phase_index,
+              pass_or_round_id: data.pass_id,
+              pass_or_round_title: data.pass_title,
               round_number: data.round_number,
               raw_text: activeTokens[data.model_id] || '',
               structured: data.structured,

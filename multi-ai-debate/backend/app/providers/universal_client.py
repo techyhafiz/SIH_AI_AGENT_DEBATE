@@ -3,46 +3,68 @@ import re
 import asyncio
 import httpx
 from typing import AsyncGenerator, Dict, Any, Optional, Tuple, List
-from app.schemas import ModelConfig, StructuredDebateTurn, CritiqueItem, ConcessionItem
+from app.schemas import ModelConfig, StructuredDebateTurn, CritiqueItem, ConcessionItem, AutonomousResearchCall
 
 def extract_and_repair_json(text: str) -> Dict[str, Any]:
     cleaned = text.strip()
     
-    # 1. Match ```json ... ``` or ``` ... ``` code blocks
+    # 1. Check for deliberation scratchpad in XML tags before or outside JSON
+    scratchpad_content = ""
+    scratchpad_match = re.search(r"<deliberation_scratchpad>([\s\S]*?)</deliberation_scratchpad>", cleaned, re.IGNORECASE)
+    if scratchpad_match:
+        scratchpad_content = scratchpad_match.group(1).strip()
+    
+    # 2. Match ```json ... ``` or ``` ... ``` code blocks
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
     if match:
-        cleaned = match.group(1).strip()
+        json_candidate = match.group(1).strip()
     else:
-        # 2. Match the first outer { ... } block
+        # 3. Match the first outer { ... } block
         first_brace = cleaned.find("{")
         last_brace = cleaned.rfind("}")
         if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-            cleaned = cleaned[first_brace:last_brace + 1]
+            json_candidate = cleaned[first_brace:last_brace + 1]
+        else:
+            json_candidate = cleaned
 
     # Try standard json parse
     try:
-        return json.loads(cleaned)
+        data = json.loads(json_candidate)
+        if isinstance(data, dict):
+            if scratchpad_content and not data.get("deliberation_scratchpad"):
+                data["deliberation_scratchpad"] = scratchpad_content
+            return data
     except Exception:
         pass
 
     # Basic repair: remove trailing commas before } or ]
-    repaired = re.sub(r",\s*([}\]])", r"\1", cleaned)
+    repaired = re.sub(r",\s*([}\]])", r"\1", json_candidate)
     try:
-        return json.loads(repaired)
+        data = json.loads(repaired)
+        if isinstance(data, dict):
+            if scratchpad_content and not data.get("deliberation_scratchpad"):
+                data["deliberation_scratchpad"] = scratchpad_content
+            return data
     except Exception:
         pass
 
     # Fallback: extract key sections
     fallback_data: Dict[str, Any] = {
+        "deliberation_scratchpad": scratchpad_content,
         "architect_lens": "",
+        "critic_lens": "",
         "critic_devil_advocate_lens": "",
-        "security_reliability_lens": "",
+        "field_hardware_lens": "",
         "pragmatist_feasibility_lens": "",
+        "security_compliance_lens": "",
+        "security_reliability_lens": "",
         "critiques": [],
         "concessions_and_defenses": [],
         "refined_solution": text,
         "positives_of_approach": [],
         "negatives_and_risks": [],
+        "autonomous_research_calls": [],
+        "research_queries_for_next_round": [],
         "consensus_vote": "DISAGREE",
         "agreement_percentage": 50
     }
@@ -83,6 +105,22 @@ def parse_structured_turn(raw_json_or_text: Any) -> StructuredDebateTurn:
                 adaptation=str(cd.get("adaptation", ""))
             ))
 
+    research_calls = []
+    for rc in data.get("autonomous_research_calls", []):
+        if isinstance(rc, dict):
+            stage = rc.get("stage", "fact_check")
+            if stage not in ["fact_check", "frontier_academic", "field_feasibility"]:
+                stage = "fact_check"
+            target_engine = rc.get("target_engine", "tavily_web")
+            if target_engine not in ["openalex_arxiv", "tavily_web"]:
+                target_engine = "tavily_web"
+            research_calls.append(AutonomousResearchCall(
+                stage=stage,
+                target_engine=target_engine,
+                query_purpose=str(rc.get("query_purpose", "")),
+                search_query=str(rc.get("search_query", ""))
+            ))
+
     vote = data.get("consensus_vote", "DISAGREE")
     if vote not in ["AGREE", "DISAGREE", "NEEDS_REFINEMENT"]:
         vote = "DISAGREE"
@@ -93,17 +131,32 @@ def parse_structured_turn(raw_json_or_text: Any) -> StructuredDebateTurn:
     except Exception:
         pct = 50
 
+    critic = str(data.get("critic_lens") or data.get("critic_devil_advocate_lens", ""))
+    hardware = str(data.get("field_hardware_lens") or data.get("pragmatist_feasibility_lens", ""))
+    security = str(data.get("security_compliance_lens") or data.get("security_reliability_lens", ""))
+
+    queries = [str(x) for x in (data.get("research_queries_for_next_round") or data.get("research_topics") or data.get("open_research_questions") or []) if x]
+    # Also include search queries from autonomous_research_calls
+    for rc in research_calls:
+        if rc.search_query and rc.search_query not in queries:
+            queries.append(rc.search_query)
+
     return StructuredDebateTurn(
+        deliberation_scratchpad=str(data.get("deliberation_scratchpad", "")),
         architect_lens=str(data.get("architect_lens", "")),
-        critic_devil_advocate_lens=str(data.get("critic_devil_advocate_lens", "")),
-        security_reliability_lens=str(data.get("security_reliability_lens", "")),
-        pragmatist_feasibility_lens=str(data.get("pragmatist_feasibility_lens", "")),
+        critic_lens=critic,
+        critic_devil_advocate_lens=critic,
+        field_hardware_lens=hardware,
+        pragmatist_feasibility_lens=hardware,
+        security_compliance_lens=security,
+        security_reliability_lens=security,
         critiques=critiques_list,
         concessions_and_defenses=concessions_list,
         refined_solution=str(data.get("refined_solution", "")),
         positives_of_approach=[str(x) for x in data.get("positives_of_approach", []) if x],
         negatives_and_risks=[str(x) for x in data.get("negatives_and_risks", []) if x],
-        research_queries_for_next_round=[str(x) for x in (data.get("research_queries_for_next_round") or data.get("research_topics") or data.get("open_research_questions") or []) if x],
+        autonomous_research_calls=research_calls,
+        research_queries_for_next_round=queries,
         consensus_vote=vote,
         agreement_percentage=pct
     )

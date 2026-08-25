@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Consensus Arena — Complete Architecture & Flow Guide</title>
+  
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Mermaid.js CDN for interactive flowcharts -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              900: '#1e1b4b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .mermaid {
+      background: white;
+      border-radius: 1rem;
+      padding: 1.5rem;
+      display: flex;
+      justify-content: center;
+    }
+    details > summary {
+      list-style: none;
+    }
+    details > summary::-webkit-details-marker {
+      display: none;
+    }
+    details[open] .arrow-icon {
+      transform: rotate(180deg);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-indigo-100 selection:text-indigo-900">
+
+  <!-- ========================================================================= -->
+  <!-- 1. HEADER HERO BAR -->
+  <!-- ========================================================================= -->
+  <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm px-6 py-4">
+    <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/30 text-xl font-black">
+          🏛️
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl font-black tracking-tight text-slate-900">AI Consensus Arena</h1>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              Interactive System Flow
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 font-medium">
+            Smart India Hackathon (SIH) Multi-Model Autonomous Deliberation Engine
+          </p>
+        </div>
+      </div>
+
+      <!-- Quick Global Actions -->
+      <div class="flex items-center gap-2.5">
+        <button onclick="toggleAllAccordions(true)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
+          ➕ Expand All
+        </button>
+        <button onclick="toggleAllAccordions(false)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
+          ➖ Collapse All
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- 2. MAIN CONTAINER -->
+  <!-- ========================================================================= -->
+  <main class="flex-1 max-w-6xl w-full mx-auto p-4 md:p-8 space-y-8">
+
+    <!-- MASTER TIMELINE FLOWCHART -->
+    <section class="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div>
+          <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
+            🗺️ Complete End-to-End Master Pipeline
+          </h2>
+          <p class="text-xs text-slate-500">
+            How 21+ AI models collaborate across 4 Deliberation Phases and 3 Autonomous Research Blocks.
+          </p>
+        </div>
+        <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          7-Step Guaranteed Pipeline
+        </span>
+      </div>
+
+      <div class="mermaid">
+flowchart TD
+    Start([🚀 Start: Problem Statement & Ministry Domain]) --> P1[Step 1: Phase 1 — Multi-Persona Genesis
+4 Internal Passes per Model]
+    P1 --> R1[Step 2: Research Block 1
+Fact-Checks + arXiv/OpenAlex Papers]
+    R1 --> P2[Step 3: Phase 2 — Adversarial Crucible
+3-Round Courtroom Debate]
+    P2 --> R2[Step 4: Research Block 2
+SOTA Algorithms & Frugal BOM Scan]
+    R2 --> P3[Step 5: Phase 3 — 10x Solution Engine
+2-Round Quantum Leap Architecture]
+    P3 --> R3[Step 6: Research Block 3
+Indian Standards & Citation Audit]
+    R3 --> P4[Step 7: Phase 4 — Convergence Crucible
+Concession Treaty & Ratification]
+    P4 --> Verdict([👑 Sovereign SIH Master Consensus Deliverable
+LATEST_CONSENSUS_VERDICT.md])
+
+    classDef phase fill:#eef2ff,stroke:#4f46e5,stroke-width:2px,color:#1e1b4b;
+    classDef research fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f;
+    classDef deliverable fill:#faf5ff,stroke:#9333ea,stroke-width:2px,color:#3b0764;
+    class P1,P2,P3,P4 phase;
+    class R1,R2,R3 research;
+    class Verdict deliverable;
+      </div>
+    </section>
+
+    <!-- INTERACTIVE EXPANDABLE ACCORDIONS -->
+    <div class="space-y-4" id="steps-container">
+
+      <!-- ===================================================================== -->
+      <!-- STEP 1: PHASE 1 MULTI-PERSONA GENESIS -->
+      <!-- ===================================================================== -->
+      <details class="group bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 open:ring-2 open:ring-indigo-500/20" open>
+        <summary class="p-6 cursor-pointer flex items-center justify-between hover:bg-slate-50/80 transition select-none">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xl shrink-0 font-black text-indigo-700">
+              1
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-800">Phase 1</span>
+                <h3 class="text-base font-extrabold text-slate-900">🏛️ Multi-Persona Genesis (4 Internal Passes)</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Every AI model self-audits through 4 distinct engineering roles before entering the debate.
+              </p>
+            </div>
+          </div>
+          <div class="arrow-icon transition-transform duration-300 text-slate-400 p-2">
+            ▼
+          </div>
+        </summary>
+
+        <div class="p-6 border-t border-slate-100 bg-slate-50/40 space-y-6">
+          <div class="mermaid">
+flowchart LR
+    P11["Pass 1.1
+🏛️ Lead Architect
+(System Topology)"] --> P12["Pass 1.2
+😈 Murphy's Law
+(Failure Inversion)"]
+    P12 --> P13["Pass 1.3
+⚙️ Frugal Field
+(₹ Budget / BOM)"]
+    P13 --> P14["Pass 1.4
+🛡️ Fort Knox
+(Security & Norms)"]
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🎯</span> In Simple Terms:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                Normally, if you ask an AI for a solution, it gives a shallow response that forgets practical issues. Here, <strong>each AI is forced to argue with itself first</strong> across 4 roles: Architect, Critic, Accountant (BOM in ₹), and Security Officer.
+              </p>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>💡</span> Why It Wins in Hackathons:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                Judges immediately see that your proposal includes worst-case edge handling, component pricing in Indian Rupees, and compliance from turn 1.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ===================================================================== -->
+      <!-- STEP 2: RESEARCH BLOCK 1 -->
+      <!-- ===================================================================== -->
+      <details class="group bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 open:ring-2 open:ring-amber-500/20">
+        <summary class="p-6 cursor-pointer flex items-center justify-between hover:bg-slate-50/80 transition select-none">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-xl shrink-0 font-black text-amber-700">
+              2
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800">Research 1</span>
+                <h3 class="text-base font-extrabold text-slate-900">🔬 Peer Fact-Check & Academic Discovery (OpenAlex + arXiv)</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Autonomous fact-checking and automated downloading of academic research papers as PDF and TXT.
+              </p>
+            </div>
+          </div>
+          <div class="arrow-icon transition-transform duration-300 text-slate-400 p-2">
+            ▼
+          </div>
+        </summary>
+
+        <div class="p-6 border-t border-slate-100 bg-amber-50/20 space-y-6">
+          <div class="mermaid">
+flowchart TD
+    In["AI Queries in <deliberation_scratchpad>"] --> Search["OpenAlex (250M Papers) + arXiv + Tavily"]
+    Search --> Download["📥 Auto-Download PDF & Extract Plain Text (pypdf)"]
+    Download --> Save["📁 Saved to workspace/research/*.pdf & *.txt"]
+    Save --> Out["Injected into Phase 2 Prompt"]
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🎯</span> In Simple Terms:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                Before models start arguing, the system searches the world's academic literature (250 million papers) and live web, automatically downloads the real research PDFs into your workspace, and provides the facts to all debaters.
+              </p>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>📁</span> Direct Workspace Storage:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                You can open the <strong>🔬 Research Hub</strong> tab in the UI or check your folder to view and download both original PDFs and clean plain-text extracts.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ===================================================================== -->
+      <!-- STEP 3: PHASE 2 ADVERSARIAL CRUCIBLE -->
+      <!-- ===================================================================== -->
+      <details class="group bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 open:ring-2 open:ring-rose-500/20">
+        <summary class="p-6 cursor-pointer flex items-center justify-between hover:bg-slate-50/80 transition select-none">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-xl shrink-0 font-black text-rose-700">
+              3
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800">Phase 2</span>
+                <h3 class="text-base font-extrabold text-slate-900">🥊 Adversarial Crucible (3-Round Courtroom Debate)</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Models launch peer critiques, defend valid engineering decisions, and lock friction points.
+              </p>
+            </div>
+          </div>
+          <div class="arrow-icon transition-transform duration-300 text-slate-400 p-2">
+            ▼
+          </div>
+        </summary>
+
+        <div class="p-6 border-t border-slate-100 bg-rose-50/20 space-y-6">
+          <div class="mermaid">
+flowchart LR
+    R21["Round 2.1: 🥊 Attacks
+(Expose Flaws)"] --> R22["Round 2.2: 🛡️ Rebuttals
+(Defend or Concede)"]
+    R22 --> R23["Round 2.3: ⚖️ Flaw Locking
+(Jury Friction Log)"]
+    R23 --> Jury["👑 Master Arbiter
+Jury Evaluation"]
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🎯</span> In Simple Terms:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                Think of this like an intense courtroom trial. Claude attacks GPT on latency, GPT attacks Gemini on compute costs, and Gemini challenges DeepSeek on offline failover. Weak ideas are destroyed, and strong solutions survive.
+              </p>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>⚖️</span> Master Arbiter Jury Log:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                The Master Arbiter (Gemini 3.5 Flash Lite with automatic failover) grades every turn, tracks consensus percentage, and logs any unresolved technical disputes into the Jury Friction Log.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ===================================================================== -->
+      <!-- STEP 4: RESEARCH BLOCK 2 -->
+      <!-- ===================================================================== -->
+      <details class="group bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 open:ring-2 open:ring-amber-500/20">
+        <summary class="p-6 cursor-pointer flex items-center justify-between hover:bg-slate-50/80 transition select-none">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-xl shrink-0 font-black text-amber-700">
+              4
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800">Research 2</span>
+                <h3 class="text-base font-extrabold text-slate-900">⚙️ SOTA Algorithms & Frugal Budget Scan</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Harvests specific bottlenecks from Phase 2 to find cutting-edge algorithms and cost-efficient architectures.
+              </p>
+            </div>
+          </div>
+          <div class="arrow-icon transition-transform duration-300 text-slate-400 p-2">
+            ▼
+          </div>
+        </summary>
+
+        <div class="p-6 border-t border-slate-100 bg-amber-50/20 space-y-6">
+          <div class="mermaid">
+flowchart LR
+    Friction["Phase 2 Friction Points"] --> Scan["Scan SOTA Models, Indexing & Budget Benchmarks"]
+    Scan --> Dossier2["📄 Compiled Research Dossier #2"]
+    Dossier2 --> P3["Ready for Phase 3 10x Innovation"]
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🎯</span> In Simple Terms:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                If the models hit a bottleneck in Phase 2 (e.g. <em>"How do we handle 100k requests/sec cheaply?"</em> or <em>"How to run AI on low battery?"</em>), this block searches for exact algorithms and lightweight models to break through the limitation.
+              </p>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🌐</span> Completely Domain-Adaptive:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                Adapts seamlessly whether your problem statement is Web/App software, AI/ML, Blockchain, MedTech, AgriTech, or IoT Hardware.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ===================================================================== -->
+      <!-- STEP 5: PHASE 3 THE 10X SOLUTION ENGINE -->
+      <!-- ===================================================================== -->
+      <details class="group bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 open:ring-2 open:ring-indigo-500/20">
+        <summary class="p-6 cursor-pointer flex items-center justify-between hover:bg-slate-50/80 transition select-none">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xl shrink-0 font-black text-indigo-700">
+              5
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-800">Phase 3</span>
+                <h3 class="text-base font-extrabold text-slate-900">🚀 The 10x Solution Engine (Quantum Leaps & Cross-Pollination)</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Transforms baseline designs into award-winning innovations with Indian ecosystem integration.
+              </p>
+            </div>
+          </div>
+          <div class="arrow-icon transition-transform duration-300 text-slate-400 p-2">
+            ▼
+          </div>
+        </summary>
+
+        <div class="p-6 border-t border-slate-100 bg-indigo-50/20 space-y-6">
+          <div class="mermaid">
+flowchart LR
+    R31["Round 3.1: 🚀 Quantum Leap
+• Flaw Inversion
+• Frugal ₹ INR Budget
+• SOTA Pipeline
+• Sovereign Tech (ISRO/IndiaStack)"] --> R32["Round 3.2: 🧬 Cross-Pollination
+• Merge peer breakthroughs
+• Add fail-safes & offline sync"]
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🎯</span> In Simple Terms:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                This phase elevates your solution from standard to world-class. Models borrow the best ideas from each other, optimize the budget in ₹ INR, and integrate national infrastructure like ISRO Bhuvan, DigiLocker, IndiaStack, and ONDC.
+              </p>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🧬</span> The 4 Pillars of Innovation:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                1. Complete Flaw Inversion · 2. Frugal Cost Breakdown · 3. SOTA Algorithm Pipeline · 4. Sovereign Indian Tech Integration.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ===================================================================== -->
+      <!-- STEP 6: RESEARCH BLOCK 3 -->
+      <!-- ===================================================================== -->
+      <details class="group bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 open:ring-2 open:ring-amber-500/20">
+        <summary class="p-6 cursor-pointer flex items-center justify-between hover:bg-slate-50/80 transition select-none">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-xl shrink-0 font-black text-amber-700">
+              6
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800">Research 3</span>
+                <h3 class="text-base font-extrabold text-slate-900">📜 Statutory Standards & Indian Ministry Compliance Audit</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Audits the candidate stack against official government regulations, safety norms, and compliance laws.
+              </p>
+            </div>
+          </div>
+          <div class="arrow-icon transition-transform duration-300 text-slate-400 p-2">
+            ▼
+          </div>
+        </summary>
+
+        <div class="p-6 border-t border-slate-100 bg-amber-50/20 space-y-6">
+          <div class="mermaid">
+flowchart LR
+    Stack["10x Candidate Architecture"] --> Audit["Audit Against Indian Regulations
+(DPDP Act 2023, MeitY, NDMA, RDSO, ABDM, RBI)"]
+    Audit --> Dossier3["📄 Compiled Research Dossier #3"]
+    Dossier3 --> Phase4["Ready for Final Ratification"]
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🎯</span> In Simple Terms:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                Before crowning the final blueprint, the system audits the design against official Indian government policies (Data Privacy Act, MeitY cloud norms, disaster protocols, railway standards, etc.).
+              </p>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+              <h4 class="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>🛡️</span> Zero Regulatory Red Flags:
+              </h4>
+              <p class="text-slate-600 leading-relaxed">
+                Ensures that ministry judges cannot penalize your team for ignoring statutory laws, data protection compliance, or field safety guidelines.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ===================================================================== -->
+      <!-- STEP 7: PHASE 4 CONVERGENCE & VERDICT -->
+      <!-- ===================================================================== -->
+      <details class="group bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 open:ring-2 open:ring-purple-500/20" open>
+        <summary class="p-6 cursor-pointer flex items-center justify-between hover:bg-slate-50/80 transition select-none">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center text-xl shrink-0 font-black text-purple-700">
+              7
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-800">Phase 4</span>
+                <h3 class="text-base font-extrabold text-slate-900">👑 Convergence Crucible & Sovereign Master Deliverable</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Concession treaty, dispute resolution duel, and synthesis of the pitch-winning deliverable.
+              </p>
+            </div>
+          </div>
+          <div class="arrow-icon transition-transform duration-300 text-slate-400 p-2">
+            ▼
+          </div>
+        </summary>
+
+        <div class="p-6 border-t border-slate-100 bg-purple-50/20 space-y-6">
+          <div class="mermaid">
+flowchart TD
+    R41["Round 4.1: 🤝 Concession Treaty
+(All models vote AGREE / DISAGREE)"] --> Gate{"Consensus >= 90%?"}
+    Gate -- "< 90%" --> R42["Round 4.2: ⚔️ Dispute Duel
+(Head-to-head compromise)"]
+    R42 --> Gate
+    Gate -- ">= 90%" --> Synth["👑 Master Arbiter Grand Finale Synthesis"]
+    Synth --> Doc["📁 LATEST_CONSENSUS_VERDICT.md"]
+          </div>
+
+          <div class="p-5 rounded-2xl bg-white border border-purple-200 space-y-3 text-xs">
+            <h4 class="font-extrabold text-purple-950 uppercase tracking-wider">
+              🏆 The 8 Sovereign Pitch-Winning Sections in LATEST_CONSENSUS_VERDICT.md:
+            </h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-slate-700">
+              <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><strong>1.</strong> Executive Summary & 1-Minute Pitch Hook</div>
+              <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><strong>2.</strong> End-to-End System Topology & Signal Flow</div>
+              <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><strong>3.</strong> Itemized BOM & Budget Breakdown in ₹ INR</div>
+              <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><strong>4.</strong> Core Algorithms, AI Pipeline & SOTA Optimization</div>
+              <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><strong>5.</strong> Fault-Tolerance, Chaos Recovery & High-Availability</div>
+              <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><strong>6.</strong> Statutory & Indian Ministry Standards Compliance</div>
+              <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80"><strong>7.</strong> Multi-Model Consensus Ratification Sign-Off</div>
+              <div class="p-2.5 rounded-xl bg-purple-100 text-purple-900 font-bold border border-purple-200"><strong>8.</strong> Pitch-Ready Markdown Ready to Download</div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+    </div>
+
+    <!-- ZERO-CRASH FAILOVER & MULTI-MODEL RESILIENCE -->
+    <section class="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div>
+          <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
+            🛡️ Zero-Crash Architecture & Arbiter Failover Chain
+          </h2>
+          <p class="text-xs text-slate-500">
+            How the system guarantees zero crashes, infinite pauses/resumes, and automatic rate-limit recovery.
+          </p>
+        </div>
+      </div>
+
+      <div class="mermaid">
+flowchart LR
+    Call["Turn Invocation"] --> T{"Response < 120s?"}
+    T -- Yes --> Save["💾 Atomic Disk Save (session_state.json)"]
+    T -- No --> Retry["Attempt 2 with Backup Key / Fallback Model ID"]
+    Retry -- Failed --> Quarantine["Quarantine Failed Model & Continue Fleet Debate"]
+    Save --> Next["Next Sub-Round"]
+
+    Arb["Primary Arbiter Failed?"] --> Arb2["Automatic Switch to Backup Arbiter"]
+    Arb2 --> Fleet["Fallback to Highest-Scoring Fleet Debater"]
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-2">
+        <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+          <strong class="text-slate-900">💾 Atomic Checkpoints:</strong>
+          <p class="text-slate-600">Every single pass is saved to disk immediately. Pausing and resuming picks up at the exact turn without re-running.</p>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+          <strong class="text-slate-900">👑 Arbiter Failover Chain:</strong>
+          <p class="text-slate-600">If Primary Arbiter hits Google rate limits, it automatically delegates jury duties to the Backup Arbiter without halting.</p>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+          <strong class="text-slate-900">🚀 21+ Dynamic Models:</strong>
+          <p class="text-slate-600">Add, edit, clone, or delete models in real time. Works with 3, 10, 21, or 50+ models simultaneously.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- 3. FOOTER -->
+  <!-- ========================================================================= -->
+  <footer class="bg-white border-t border-slate-200 px-6 py-4 text-center text-xs text-slate-500">
+    AI Consensus Arena — Built for Smart India Hackathon (SIH) · Exclusively Light Theme
+  </footer>
+
+  <!-- Script to toggle all accordions -->
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+
+    function toggleAllAccordions(openState) {
+      document.querySelectorAll('#steps-container details').forEach(d => {
+        d.open = openState;
+      });
+    }
+  </script>
+</body>
+</html>

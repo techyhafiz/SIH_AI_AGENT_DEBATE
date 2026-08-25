@@ -2,7 +2,8 @@ import os
 import asyncio
 import json
 import time
-from typing import Optional, List, Dict
+import httpx
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -183,6 +184,250 @@ async def test_model_endpoint(req: ModelTestRequest):
         "working_key": working_key
     }
 
+PROVIDER_TEMPLATES = [
+    {
+        "provider_id": "google_gemini",
+        "provider_name": "Google AI Studio (Gemini)",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "key_env": "GEMINI_API_KEY",
+        "help_url": "https://aistudio.google.com/app/apikey",
+        "models": [
+            {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash Lite", "model_id": "gemini-3.5-flash-lite", "fallback_models": ["gemini-flash-lite-latest"], "is_arbiter": True, "is_backup_arbiter": False},
+            {"id": "gemini-3.7-flash", "name": "Gemini Flash Quota Pool (3.7 / 3.6 / 3.5)", "model_id": "gemini-3.7-flash", "fallback_models": ["gemini-3.6-flash", "gemini-3.5-flash"], "is_arbiter": False, "is_backup_arbiter": True}
+        ]
+    },
+    {
+        "provider_id": "openrouter",
+        "provider_name": "OpenRouter (Free & Paid Fleet)",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_env": "OPENROUTER_API_KEY",
+        "help_url": "https://openrouter.ai/keys",
+        "models": [
+            {"id": "glm-5.2-free", "name": "GLM 5.2 (Free)", "model_id": "z-ai/glm-5.2:free", "fallback_models": []},
+            {"id": "nemotron-3-super", "name": "NVIDIA Nemotron 3 Super 120B (Free)", "model_id": "nvidia/nemotron-3-super-120b-a12b:free", "fallback_models": []},
+            {"id": "nemotron-3.5-lightning", "name": "NVIDIA Nemotron 3.5 Lightning (Free)", "model_id": "nvidia/nemotron-3.5-lightning:free", "fallback_models": []},
+            {"id": "stealth-ox", "name": "Stealth Ox-Alpha", "model_id": "stealth/ox-alpha", "fallback_models": []}
+        ]
+    },
+    {
+        "provider_id": "agentrouter",
+        "provider_name": "AgentRouter (Claude & GPT Flagships)",
+        "base_url": "https://agentrouter.org/v1",
+        "key_env": "AGENTROUTER_API_KEY",
+        "help_url": "https://agentrouter.org",
+        "models": [
+            {"id": "claude-opus-4-8", "name": "Claude Opus 4.8", "model_id": "claude-opus-4-8", "fallback_models": []},
+            {"id": "claude-opus-5", "name": "Claude Opus 5.0", "model_id": "claude-opus-5", "fallback_models": []},
+            {"id": "gpt-5.6-sol", "name": "GPT 5.6 Sol", "model_id": "gpt-5.6-sol", "fallback_models": []}
+        ]
+    },
+    {
+        "provider_id": "xkiro",
+        "provider_name": "XKiro Router",
+        "base_url": "https://api.xkiro.com/v1",
+        "key_env": "XKIRO_API_KEY",
+        "help_url": "https://api.xkiro.com",
+        "models": [
+            {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro (XKiro)", "model_id": "deepseek/deepseek-v4-pro", "fallback_models": ["deepseek/deepseek-v4-flash", "deepseek/deepseek-chat-v3.1"]},
+            {"id": "qwen-3.8-max-xkiro", "name": "Qwen 3.8 Max (XKiro)", "model_id": "qwen/qwen3.8-max", "fallback_models": ["qwen/qwen3.7-max", "qwen/qwen3.7-plus"]},
+            {"id": "mistral-large-2512", "name": "Mistral Large 2512 (XKiro)", "model_id": "mistralai/mistral-large-2512", "fallback_models": ["mistralai/mistral-medium-3.5"]},
+            {"id": "qwen-3.7-max-xkiro", "name": "Qwen 3.7 Max (XKiro)", "model_id": "qwen/qwen3.7-max", "fallback_models": []},
+            {"id": "minimax-m2.7", "name": "MiniMax M2.7 (XKiro)", "model_id": "minimax/minimax-m2.7", "fallback_models": ["minimax/minimax-m2.5-highspeed"]}
+        ]
+    },
+    {
+        "provider_id": "tokenin",
+        "provider_name": "TokenIn Free Hub",
+        "base_url": "https://tokenin.my.id/v1",
+        "key_env": "TOKENIN_API_KEY",
+        "help_url": "https://tokenin.my.id",
+        "models": [
+            {"id": "gemini-3.5-flash-free", "name": "Gemini 3.5 Flash Free (TokenIn)", "model_id": "myt/gemini-3.5-flash-free", "fallback_models": ["myt/mimo-v2.5-free"]},
+            {"id": "claude-opus-4-8-free", "name": "Claude Opus 4.8 Free (TokenIn)", "model_id": "myt/claude-opus-4-8-free", "fallback_models": ["myt/gpt-5.6-sol-free"]}
+        ]
+    },
+    {
+        "provider_id": "tokenfaucet",
+        "provider_name": "FreeTokenFaucet",
+        "base_url": "https://freetokenfaucet.com/v1",
+        "key_env": "TOKENFAUCET_API_KEY",
+        "help_url": "https://freetokenfaucet.com",
+        "models": [
+            {"id": "mimo-v2.5", "name": "Mimo v2.5 (TokenFaucet)", "model_id": "mimo-v2.5", "fallback_models": []},
+            {"id": "gpt-5.6-terra", "name": "GPT 5.6 Terra (TokenFaucet)", "model_id": "gpt-5.6-terra", "fallback_models": []},
+            {"id": "gpt-5.6-luna", "name": "GPT 5.6 Luna (TokenFaucet)", "model_id": "gpt-5.6-luna", "fallback_models": []}
+        ]
+    },
+    {
+        "provider_id": "bluesminds",
+        "provider_name": "BluesMinds AI",
+        "base_url": "https://api.bluesminds.com/v1",
+        "key_env": "BLUESMINDS_API_KEY",
+        "help_url": "https://api.bluesminds.com",
+        "models": [
+            {"id": "claude-sonnet-5", "name": "Claude Sonnet 5 (BluesMinds)", "model_id": "unlimited/claude-sonnet-5", "fallback_models": []}
+        ]
+    },
+    {
+        "provider_id": "tokenrouter",
+        "provider_name": "TokenRouter",
+        "base_url": "https://api.tokenrouter.com/v1",
+        "key_env": "TOKENROUTER_API_KEY",
+        "help_url": "https://api.tokenrouter.com",
+        "models": [
+            {"id": "qwen-3.8-max-tokenrouter", "name": "Qwen 3.8 Max (Free)", "model_id": "qwen/qwen3.8-max-free", "fallback_models": []}
+        ]
+    }
+]
+
+@app.get("/api/providers/templates")
+async def get_provider_templates():
+    return PROVIDER_TEMPLATES
+
+@app.post("/api/models/test-all")
+async def test_all_models(models: List[ModelConfig]):
+    """
+    Tests all configured models concurrently and returns latency + availability map.
+    """
+    async def _test_single(m: ModelConfig):
+        success, message, latency_ms, working_key = await UniversalAIClient.test_connectivity(m)
+        return {
+            "id": m.id,
+            "name": m.name,
+            "model_id": m.model_id,
+            "success": success,
+            "message": message,
+            "latency_ms": round(latency_ms, 2),
+            "working_key": working_key
+        }
+
+    tasks = [_test_single(m) for m in models]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    clean_results = {}
+    for r in results:
+        if isinstance(r, dict):
+            clean_results[r["id"]] = r
+        elif isinstance(r, Exception):
+            pass
+    return clean_results
+
+@app.post("/api/providers/auto-discover")
+async def auto_discover_models(payload: Dict[str, Any] = {}):
+    """
+    Accepts provider keys, queries provider /models endpoints dynamically + templates in parallel,
+    benchmarks latency, sorts available models by speed, flags Admin's Favorites,
+    and returns separated available vs unavailable lists.
+    """
+    data = payload if isinstance(payload, dict) else {}
+    provider_keys = data.get("provider_keys", {})
+
+    # Load master admin favorites for matching
+    admin_configs = await UserConfigStorage.get_user_config()
+    admin_model_ids = {m.model_id.lower(): m for m in admin_configs}
+    admin_names = {m.name.lower(): m for m in admin_configs}
+
+    test_tasks = []
+    seen_model_keys = set()
+
+    for template in PROVIDER_TEMPLATES:
+        p_id = template["provider_id"]
+        key = provider_keys.get(p_id, "").strip()
+        if not key:
+            continue
+
+        base_url = template["base_url"].rstrip("/")
+        models_to_test = list(template["models"])
+
+        # Try to query provider's /models endpoint dynamically
+        try:
+            models_endpoint = f"{base_url}/models"
+            headers = {"Authorization": f"Bearer {key}", "User-Agent": "SIH-Consensus-Arena/1.0"}
+            async with httpx.AsyncClient(timeout=4.0, verify=False) as client:
+                resp = await client.get(models_endpoint, headers=headers)
+                if resp.status_code == 200:
+                    dyn_data = resp.json()
+                    raw_list = dyn_data.get("data", []) if isinstance(dyn_data, dict) else []
+                    if isinstance(raw_list, list):
+                        for item in raw_list[:15]:  # Take top dynamic models
+                            m_id = item.get("id") if isinstance(item, dict) else str(item)
+                            if m_id and not any(t.get("model_id") == m_id for t in models_to_test):
+                                models_to_test.append({
+                                    "id": m_id.replace("/", "-").replace(":", "-"),
+                                    "name": item.get("name", m_id.split("/")[-1].replace("-", " ").title()) if isinstance(item, dict) else m_id,
+                                    "model_id": m_id,
+                                    "fallback_models": [],
+                                    "is_dynamic": True
+                                })
+        except Exception:
+            pass  # Fallback to curated templates if /models is not supported
+
+        for m_item in models_to_test:
+            dedup_key = f"{base_url}_{m_item['model_id']}"
+            if dedup_key in seen_model_keys:
+                continue
+            seen_model_keys.add(dedup_key)
+
+            # Check if this model is an Admin Favorite
+            is_admin_fav = (
+                m_item["model_id"].lower() in admin_model_ids or
+                m_item["name"].lower() in admin_names or
+                any(adm_m.model_id.lower() == m_item["model_id"].lower() for adm_m in admin_configs)
+            )
+
+            cfg = ModelConfig(
+                id=f"m_{p_id}_{m_item['id']}",
+                name=m_item["name"],
+                base_url=template["base_url"],
+                api_key=key,
+                backup_api_keys=[],
+                model_id=m_item["model_id"],
+                fallback_model_ids=m_item.get("fallback_models", []),
+                provider_type="openai_compatible",
+                timeout_seconds=600,
+                is_arbiter=m_item.get("is_arbiter", False),
+                is_backup_arbiter=m_item.get("is_backup_arbiter", False),
+                enabled=True,
+                temperature=0.7
+            )
+            test_tasks.append((cfg, template, is_admin_fav))
+
+    async def _test_discovery(cfg: ModelConfig, template: dict, is_admin_fav: bool):
+        success, message, latency_ms, working_key = await UniversalAIClient.test_connectivity(cfg)
+        return {
+            "model": cfg.model_dump(),
+            "provider_name": template["provider_name"],
+            "provider_id": template["provider_id"],
+            "success": success,
+            "latency_ms": round(latency_ms, 2),
+            "message": message,
+            "is_admin_favorite": is_admin_fav
+        }
+
+    available_models = []
+    unavailable_models = []
+
+    if test_tasks:
+        results = await asyncio.gather(*[_test_discovery(cfg, tmpl, is_fav) for cfg, tmpl, is_fav in test_tasks], return_exceptions=True)
+        for r in results:
+            if isinstance(r, dict):
+                if r["success"]:
+                    available_models.append(r)
+                else:
+                    unavailable_models.append(r)
+
+    # Sort available models by latency (fastest first)
+    available_models.sort(key=lambda x: x["latency_ms"])
+
+    return {
+        "available_models": available_models,
+        "unavailable_models": unavailable_models,
+        "discovered_models": available_models + unavailable_models,
+        "admin_favorites_count": sum(1 for m in available_models if m["is_admin_favorite"]),
+        "total_tested": len(test_tasks)
+    }
+
+
 @app.post("/api/debate/start")
 async def start_debate(req: StartDebateRequest):
     if not req.models or len(req.models) < 2:
@@ -192,6 +437,16 @@ async def start_debate(req: StartDebateRequest):
     if not arbiter_id:
         arbiter_model = next((m for m in req.models if m.is_arbiter), req.models[0])
         arbiter_id = arbiter_model.id
+
+    backup_arbiter_id = req.backup_arbiter_model_id
+    if not backup_arbiter_id:
+        backup_candidate = next((m for m in req.models if m.is_backup_arbiter and m.id != arbiter_id), None)
+        if not backup_candidate:
+            # Pick second enabled model as fallback backup
+            other_models = [m for m in req.models if m.id != arbiter_id and m.enabled]
+            backup_candidate = other_models[0] if other_models else None
+        if backup_candidate:
+            backup_arbiter_id = backup_candidate.id
 
     title = req.session_title or (f"{req.ps_code}_{sanitize_folder_name(req.ministry_domain)}" if req.ps_code else f"SIH_{sanitize_folder_name(req.ministry_domain)}")
     
@@ -207,8 +462,12 @@ async def start_debate(req: StartDebateRequest):
         ministry_domain=req.ministry_domain or "Smart India Hackathon (General)",
         models=req.models,
         arbiter_model_id=arbiter_id,
+        backup_arbiter_model_id=backup_arbiter_id,
         status="running",
         current_phase_index=1,
+        current_phase_title="Phase 1: Multi-Persona Genesis",
+        current_pass_id="1.1",
+        current_pass_title="Pass 1.1: Lead Architect Genesis",
         current_phase_prompt=full_problem_text
     )
 
@@ -238,16 +497,17 @@ async def start_followup_debate(session_id: str, req: FollowUpDebateRequest):
 
     phase_title = req.phase_title or f"Phase {session.current_phase_index + 1} Specification"
     
-    await DebateOrchestrator.start_followup_phase(
-        session_id=session_id,
-        followup_prompt=req.followup_prompt.strip(),
-        phase_title=phase_title,
-        auto_advance=req.auto_advance
-    )
+    session.current_phase_index += 1
+    session.current_phase_title = phase_title
+    session.current_phase_prompt = req.followup_prompt.strip()
+    session.status = "running"
+    await SessionStorage.save_session(session)
+
+    await DebateOrchestrator.resume_debate(session_id, auto_advance=req.auto_advance)
 
     return {
         "status": "running",
-        "phase_index": session.current_phase_index + 1,
+        "phase_index": session.current_phase_index,
         "phase_title": phase_title
     }
 
@@ -335,8 +595,46 @@ async def download_workspace_file(session_id: str, filename: str):
     if not session:
         raise HTTPException(status_code=404, detail="Debate session not found.")
 
-    file_path = os.path.join(session.workspace_folder, filename)
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found in workspace.")
+    workspace_dir = SessionStorage.get_workspace_dir(session)
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.abspath(os.path.join(workspace_dir, safe_filename))
 
-    return FileResponse(file_path, filename=filename, media_type="text/markdown")
+    if not file_path.startswith(os.path.abspath(workspace_dir)):
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    if not os.path.exists(file_path):
+        content_to_write = None
+        for phase in session.phases:
+            if phase.verdict_filename == safe_filename:
+                content_to_write = phase.verdict_markdown
+                break
+        if not content_to_write and safe_filename in ["LATEST_CONSENSUS_VERDICT.md", "verdict.md"]:
+            content_to_write = session.final_markdown_report
+
+        if content_to_write:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content_to_write)
+        else:
+            raise HTTPException(status_code=404, detail="File not found in workspace.")
+
+    media_type = "application/pdf" if safe_filename.endswith(".pdf") else "text/plain" if safe_filename.endswith(".txt") else "text/markdown; charset=utf-8"
+    return FileResponse(file_path, filename=safe_filename, media_type=media_type)
+
+
+@app.get("/api/workspaces/{session_id}/research/{filename}")
+async def download_research_file(session_id: str, filename: str):
+    session = await SessionStorage.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Debate session not found.")
+
+    workspace_dir = SessionStorage.get_workspace_dir(session)
+    research_dir = os.path.abspath(os.path.join(workspace_dir, "research"))
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.abspath(os.path.join(research_dir, safe_filename))
+
+    if not file_path.startswith(research_dir) or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Research file not found.")
+
+    media_type = "application/pdf" if safe_filename.endswith(".pdf") else "text/plain; charset=utf-8"
+    return FileResponse(file_path, filename=safe_filename, media_type=media_type)
+
