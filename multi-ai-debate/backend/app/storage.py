@@ -468,3 +468,26 @@ class SessionStorage:
             # Sort newest first
             results.sort(key=lambda x: x.get("modified_time", 0), reverse=True)
             return results
+
+    @classmethod
+    async def delete_session(cls, session_id: str) -> bool:
+        async with cls._lock:
+            if session_id in cls._memory_cache:
+                del cls._memory_cache[session_id]
+            if not os.path.exists(WORKSPACES_ROOT):
+                return False
+            for folder in os.listdir(WORKSPACES_ROOT):
+                folder_path = os.path.join(WORKSPACES_ROOT, folder)
+                if os.path.isdir(folder_path):
+                    session_file = os.path.join(folder_path, "session_state.json")
+                    if os.path.exists(session_file):
+                        try:
+                            with open(session_file, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                                if data.get("session_id") == session_id:
+                                    import shutil
+                                    shutil.rmtree(folder_path)
+                                    return True
+                        except Exception:
+                            pass
+            return False

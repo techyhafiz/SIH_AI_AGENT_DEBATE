@@ -68,6 +68,23 @@ import {
   CheckCircle
 } from 'lucide-react';
 
+
+const PIPELINE_STEPS = [
+  { id: '1.1', phase: 1, title: 'Pass 1.1: 🏛️ Architect Genesis', short: '1.1 Arch' },
+  { id: '1.2', phase: 1, title: "Pass 1.2: 😈 Murphy's Critic", short: '1.2 Critic' },
+  { id: '1.3', phase: 1, title: 'Pass 1.3: ⚙️ BOM Reality', short: '1.3 BOM' },
+  { id: '1.4', phase: 1, title: 'Pass 1.4: 🛡️ Security & Compliance', short: '1.4 Sec' },
+  { id: 'R1', phase: 1, title: '🔬 Research Block 1: Fact-Check & arXiv', short: 'R1 Research' },
+  { id: '2.1', phase: 2, title: 'Round 2.1: 🥊 Cross-Examination', short: '2.1 Cross' },
+  { id: '2.2', phase: 2, title: 'Round 2.2: 🛡️ Rebuttal & Defense', short: '2.2 Defend' },
+  { id: '2.3', phase: 2, title: 'Round 2.3: ⚖️ Flaw Locking', short: '2.3 Lock' },
+  { id: 'R2', phase: 2, title: '🔬 Research Block 2: IC & Algorithm Scan', short: 'R2 Research' },
+  { id: '3.1', phase: 3, title: 'Round 3.1: 🚀 10x Quantum Leap', short: '3.1 10x' },
+  { id: '3.2', phase: 3, title: 'Round 3.2: 🔬 Micro-Optimization', short: '3.2 Opt' },
+  { id: 'R3', phase: 3, title: '🔬 Research Block 3: Standards & Citations', short: 'R3 Research' },
+  { id: '4.1', phase: 4, title: 'Round 4.1: 🤝 Concession & Sovereign Verdict', short: '4.1 Verdict' },
+];
+
 const DEFAULT_FLEET: ModelConfig[] = [
   { id: 'm1', name: 'Claude Opus 4.8', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [''], model_id: 'claude-opus-4-8', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: false, enabled: true, temperature: 0.7 },
   { id: 'm2', name: 'Claude Opus 5.0', base_url: 'https://agentrouter.org/v1', api_key: '', backup_api_keys: [''], model_id: 'claude-opus-5', fallback_model_ids: [], provider_type: 'openai_compatible', timeout_seconds: 600, is_arbiter: false, is_backup_arbiter: false, enabled: true, temperature: 0.6 },
@@ -638,11 +655,33 @@ export default function HomePage() {
     }
   };
 
+  const [historySearchFilter, setHistorySearchFilter] = useState('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'All' | 'live' | 'completed' | 'paused'>('All');
+
   const handleLoadSavedSession = (targetSessionId: string) => {
     setSessionId(targetSessionId);
     localStorage.setItem('active_debate_session_id', targetSessionId);
     setIsHistoryModalOpen(false);
     setActiveTab('arena');
+  };
+
+  const handleDeleteSession = async (targetSessionId: string, folderName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Are you sure you want to delete workspace "${folderName}"?`)) return;
+    try {
+      const res = await fetch(`/api/workspaces/${targetSessionId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setSavedWorkspaces((prev) => prev.filter((w) => w.session_id !== targetSessionId));
+        if (sessionId === targetSessionId) {
+          setSessionId('');
+          localStorage.removeItem('active_debate_session_id');
+        }
+      } else {
+        alert('Failed to delete workspace.');
+      }
+    } catch (err: any) {
+      alert(`Error deleting workspace: ${err.message}`);
+    }
   };
 
   const handleSendArbiterCommand = async (customCmd?: string) => {
@@ -2691,6 +2730,34 @@ export default function HomePage() {
               </div>
             </div>
 
+            {/* Search & Filter Bar */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <input
+                type="text"
+                value={historySearchFilter}
+                onChange={(e) => setHistorySearchFilter(e.target.value)}
+                placeholder="Search history by title, problem code, or folder..."
+                className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+
+              <div className="flex items-center gap-1">
+                {(['All', 'live', 'completed', 'paused'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setHistoryStatusFilter(st)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                      historyStatusFilter === st
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                    }`}
+                  >
+                    {st === 'All' ? 'All' : st.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* List Container */}
             <div className="flex-1 overflow-y-auto space-y-3 pr-1 max-h-96">
               {isLoadingHistory ? (
@@ -2698,69 +2765,94 @@ export default function HomePage() {
                   <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
                   <span>Scanning saved workspaces on disk...</span>
                 </div>
-              ) : savedWorkspaces.length === 0 ? (
+              ) : savedWorkspaces.filter((w) => {
+                const searchMatch = !historySearchFilter || `${w.session_title || ''} ${w.ps_code || ''} ${w.folder || ''}`.toLowerCase().includes(historySearchFilter.toLowerCase());
+                const statusMatch = historyStatusFilter === 'All' || (w.status || 'saved').toLowerCase().includes(historyStatusFilter.toLowerCase());
+                return searchMatch && statusMatch;
+              }).length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-400 space-y-2">
                   <FolderOpen className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
-                  <p>No saved debate sessions found yet on disk.</p>
-                  <p className="text-[11px]">Start a new deliberation to create your first workspace.</p>
+                  <p>No matching debate workspaces found.</p>
                 </div>
               ) : (
-                savedWorkspaces.map((w, idx) => {
-                  const isCurrent = w.session_id === sessionId;
-                  const isLive = w.status === 'running' || w.status === 'live';
-                  const isCompleted = w.status === 'completed';
-                  return (
-                    <div
-                      key={idx}
-                      className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        isCurrent
-                          ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-800 ring-2 ring-indigo-500/20'
-                          : 'bg-slate-50/80 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800/80'
-                      }`}
-                    >
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-extrabold text-xs text-slate-900 dark:text-white truncate max-w-sm">
-                            {w.session_title || w.folder || 'Debate Session'}
-                          </h4>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                            isLive
-                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 animate-pulse'
-                              : isCompleted
-                              ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300'
-                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                          }`}>
-                            {w.status || 'saved'}
-                          </span>
-                          {isCurrent && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-600 text-white">
-                              Active
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                          <span>Rounds: <b>{w.rounds_count || 0}</b></span>
-                          <span>·</span>
-                          <span className="truncate max-w-xs">{w.folder}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleLoadSavedSession(w.session_id)}
-                        className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 shrink-0 ${
+                savedWorkspaces
+                  .filter((w) => {
+                    const searchMatch = !historySearchFilter || `${w.session_title || ''} ${w.ps_code || ''} ${w.folder || ''}`.toLowerCase().includes(historySearchFilter.toLowerCase());
+                    const statusMatch = historyStatusFilter === 'All' || (w.status || 'saved').toLowerCase().includes(historyStatusFilter.toLowerCase());
+                    return searchMatch && statusMatch;
+                  })
+                  .map((w, idx) => {
+                    const isCurrent = w.session_id === sessionId;
+                    const isLive = w.status === 'running' || w.status === 'live';
+                    const isCompleted = w.status === 'completed';
+                    return (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                           isCurrent
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700'
+                            ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-800 ring-2 ring-indigo-500/20'
+                            : 'bg-slate-50/80 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800/80'
                         }`}
                       >
-                        <FolderOpen className="w-3.5 h-3.5" />
-                        {isCurrent ? 'Viewing Now' : 'Open & Resume'}
-                      </button>
-                    </div>
-                  );
-                })
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-extrabold text-xs text-slate-900 dark:text-white truncate max-w-sm">
+                              {w.session_title || w.folder || 'Debate Session'}
+                            </h4>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              isLive
+                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 animate-pulse'
+                                : isCompleted
+                                ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300'
+                                : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                            }`}>
+                              {w.status || 'saved'}
+                            </span>
+                            {w.consensus_score ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                                {w.consensus_score}% Consensus
+                              </span>
+                            ) : null}
+                            {isCurrent && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-600 text-white">
+                                Active
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                            <span>Rounds: <b>{w.rounds_count || 0}</b></span>
+                            <span>·</span>
+                            <span className="truncate max-w-xs">{w.folder}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleLoadSavedSession(w.session_id)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                              isCurrent
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            {isCurrent ? 'Viewing Now' : 'Open & Resume'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteSession(w.session_id, w.folder, e)}
+                            className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                            title="Delete this workspace from disk"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
               )}
             </div>
 

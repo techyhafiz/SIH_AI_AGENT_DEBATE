@@ -723,6 +723,13 @@ async def handle_arbiter_command(session_id: str, req: ArbiterCommandRequest):
 async def list_all_workspaces():
     return await SessionStorage.list_workspaces()
 
+@app.delete("/api/workspaces/{session_id}")
+async def delete_workspace_endpoint(session_id: str):
+    success = await SessionStorage.delete_session(session_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Debate session workspace not found.")
+    return {"status": "success", "message": f"Deleted workspace for session {session_id}"}
+
 @app.get("/api/workspaces/{session_id}/files/{filename}")
 async def download_workspace_file(session_id: str, filename: str):
     session = await SessionStorage.get_session(session_id)
