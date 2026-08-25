@@ -51,32 +51,64 @@ async def serve_index():
 async def health_check():
     return {"status": "ok", "service": "multi-ai-debate-engine"}
 
-PS_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "extracted_problem_statements.json")
+POSSIBLE_PS_PATHS = [
+    os.path.join(os.path.dirname(__file__), "..", "data", "extracted_problem_statements.json"),
+    os.path.join(os.path.dirname(__file__), "..", "..", "extracted_problem_statements.json"),
+    os.path.join(os.getcwd(), "data", "extracted_problem_statements.json"),
+    os.path.join(os.getcwd(), "extracted_problem_statements.json"),
+]
 
 @app.get("/api/problem-statements")
-async def get_problem_statements(query: Optional[str] = None):
+async def get_problem_statements(
+    query: Optional[str] = None,
+    category: Optional[str] = None,
+    theme: Optional[str] = None
+):
     """
-    Returns list of all imported SIH problem statements with optional keyword/code filtering.
+    Returns list of all imported SIH problem statements with multi-token keyword/code/description filtering.
     """
-    if not os.path.exists(PS_FILE_PATH):
+    target_path = None
+    for p in POSSIBLE_PS_PATHS:
+        if os.path.exists(p):
+            target_path = p
+            break
+
+    if not target_path:
         return []
+
     try:
-        with open(PS_FILE_PATH, "r", encoding="utf-8") as f:
+        with open(target_path, "r", encoding="utf-8") as f:
             all_ps = json.load(f)
+
+        results = all_ps
+
+        if category and category.lower() != "all":
+            c_lower = category.strip().lower()
+            results = [ps for ps in results if ps.get("category", "").lower() == c_lower]
+
+        if theme and theme.lower() != "all":
+            t_lower = theme.strip().lower()
+            results = [ps for ps in results if t_lower in ps.get("theme", "").lower()]
+
+        if query and query.strip():
+            tokens = [t.strip().lower() for t in query.strip().split() if t.strip()]
             
-        if not query:
-            return all_ps
-            
-        q = query.strip().lower()
-        filtered = [
-            ps for ps in all_ps
-            if q in ps.get("ps_code", "").lower()
-            or q in ps.get("ps_id", "").lower()
-            or q in ps.get("title", "").lower()
-            or q in ps.get("organization", "").lower()
-            or q in ps.get("theme", "").lower()
-        ]
-        return filtered
+            def matches(ps: dict) -> bool:
+                combined_text = " ".join([
+                    str(ps.get("ps_code", "")),
+                    str(ps.get("ps_id", "")),
+                    str(ps.get("title", "")),
+                    str(ps.get("organization", "")),
+                    str(ps.get("department", "")),
+                    str(ps.get("theme", "")),
+                    str(ps.get("category", "")),
+                    str(ps.get("description", ""))
+                ]).lower()
+                return all(token in combined_text for token in tokens)
+
+            results = [ps for ps in results if matches(ps)]
+
+        return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading problem statements: {str(e)}")
 
@@ -312,27 +344,49 @@ async def test_all_models(models: List[ModelConfig]):
             pass
     return clean_results
 
+# Discovery must always answer well inside the frontend dev-proxy timeout, so probes are
+# short-lived, concurrency is capped, and the whole sweep runs under a hard time budget.
+DISCOVERY_PROBE_TIMEOUT_SECONDS = 12   # per HTTP attempt (NOT the 600s debate timeout)
+DISCOVERY_TOTAL_BUDGET_SECONDS = 55    # hard ceiling for the whole sweep
+DISCOVERY_MAX_CONCURRENCY = 20         # simultaneous live probes
+DISCOVERY_MAX_DYNAMIC_PER_PROVIDER = 15
+
 @app.post("/api/providers/auto-discover")
 async def auto_discover_models(payload: Dict[str, Any] = {}):
     """
     Accepts provider keys, queries provider /models endpoints dynamically + templates in parallel,
     benchmarks latency, sorts available models by speed, flags Admin's Favorites,
     and returns separated available vs unavailable lists.
+
+    Always returns 200 with partial results rather than hanging: probes are capped at
+    DISCOVERY_PROBE_TIMEOUT_SECONDS each and the sweep is abandoned after
+    DISCOVERY_TOTAL_BUDGET_SECONDS, with unfinished models reported as unavailable.
     """
     data = payload if isinstance(payload, dict) else {}
-    provider_keys = data.get("provider_keys", {})
+    raw_keys = data.get("provider_keys") or {}
+    if not isinstance(raw_keys, dict):
+        raw_keys = {}
+    # Tolerate null / non-string values coming from the wizard
+    provider_keys = {
+        str(k): (v.strip() if isinstance(v, str) else "")
+        for k, v in raw_keys.items()
+    }
 
     # Load master admin favorites for matching
-    admin_configs = await UserConfigStorage.get_user_config()
-    admin_model_ids = {m.model_id.lower(): m for m in admin_configs}
-    admin_names = {m.name.lower(): m for m in admin_configs}
+    try:
+        admin_configs = await UserConfigStorage.get_user_config()
+    except Exception as e:
+        print(f"[auto-discover] Could not load admin config, continuing without favorites: {e}")
+        admin_configs = []
+    admin_model_ids = {m.model_id.lower() for m in admin_configs}
+    admin_names = {m.name.lower() for m in admin_configs}
 
     test_tasks = []
     seen_model_keys = set()
 
     for template in PROVIDER_TEMPLATES:
         p_id = template["provider_id"]
-        key = provider_keys.get(p_id, "").strip()
+        key = provider_keys.get(p_id, "")
         if not key:
             continue
 
@@ -349,72 +403,136 @@ async def auto_discover_models(payload: Dict[str, Any] = {}):
                     dyn_data = resp.json()
                     raw_list = dyn_data.get("data", []) if isinstance(dyn_data, dict) else []
                     if isinstance(raw_list, list):
-                        for item in raw_list[:15]:  # Take top dynamic models
-                            m_id = item.get("id") if isinstance(item, dict) else str(item)
-                            if m_id and not any(t.get("model_id") == m_id for t in models_to_test):
-                                models_to_test.append({
-                                    "id": m_id.replace("/", "-").replace(":", "-"),
-                                    "name": item.get("name", m_id.split("/")[-1].replace("-", " ").title()) if isinstance(item, dict) else m_id,
-                                    "model_id": m_id,
-                                    "fallback_models": [],
-                                    "is_dynamic": True
-                                })
+                        for item in raw_list[:DISCOVERY_MAX_DYNAMIC_PER_PROVIDER]:
+                            m_id = item.get("id") if isinstance(item, dict) else item
+                            # Providers occasionally emit null / numeric / nested ids - skip those
+                            if not isinstance(m_id, str) or not m_id.strip():
+                                continue
+                            m_id = m_id.strip()
+                            if any(t.get("model_id") == m_id for t in models_to_test):
+                                continue
+                            raw_name = item.get("name") if isinstance(item, dict) else None
+                            display_name = (
+                                raw_name.strip()
+                                if isinstance(raw_name, str) and raw_name.strip()
+                                else m_id.split("/")[-1].replace("-", " ").title()
+                            )
+                            models_to_test.append({
+                                "id": m_id.replace("/", "-").replace(":", "-"),
+                                "name": display_name,
+                                "model_id": m_id,
+                                "fallback_models": [],
+                                "is_dynamic": True
+                            })
         except Exception:
             pass  # Fallback to curated templates if /models is not supported
 
         for m_item in models_to_test:
-            dedup_key = f"{base_url}_{m_item['model_id']}"
-            if dedup_key in seen_model_keys:
+            try:
+                m_model_id = str(m_item.get("model_id") or "").strip()
+                if not m_model_id:
+                    continue
+
+                dedup_key = f"{base_url}_{m_model_id}"
+                if dedup_key in seen_model_keys:
+                    continue
+                seen_model_keys.add(dedup_key)
+
+                m_name = str(m_item.get("name") or m_model_id)
+                m_slug = str(m_item.get("id") or m_model_id).replace("/", "-").replace(":", "-")
+
+                # Check if this model is an Admin Favorite
+                is_admin_fav = (
+                    m_model_id.lower() in admin_model_ids or
+                    m_name.lower() in admin_names
+                )
+
+                cfg = ModelConfig(
+                    id=f"m_{p_id}_{m_slug}",
+                    name=m_name,
+                    base_url=template["base_url"],
+                    api_key=key,
+                    backup_api_keys=[],
+                    model_id=m_model_id,
+                    fallback_model_ids=[str(f).strip() for f in (m_item.get("fallback_models") or []) if str(f).strip()],
+                    provider_type="openai_compatible",
+                    timeout_seconds=600,
+                    is_arbiter=bool(m_item.get("is_arbiter", False)),
+                    is_backup_arbiter=bool(m_item.get("is_backup_arbiter", False)),
+                    enabled=True,
+                    temperature=0.7
+                )
+                # Probe with a short timeout; the returned cfg keeps the full 600s debate timeout.
+                probe_cfg = cfg.model_copy(update={"timeout_seconds": DISCOVERY_PROBE_TIMEOUT_SECONDS})
+                test_tasks.append((cfg, probe_cfg, template, is_admin_fav))
+            except Exception as e:
+                print(f"[auto-discover] Skipped malformed model entry from {p_id}: {e}")
                 continue
-            seen_model_keys.add(dedup_key)
 
-            # Check if this model is an Admin Favorite
-            is_admin_fav = (
-                m_item["model_id"].lower() in admin_model_ids or
-                m_item["name"].lower() in admin_names or
-                any(adm_m.model_id.lower() == m_item["model_id"].lower() for adm_m in admin_configs)
-            )
-
-            cfg = ModelConfig(
-                id=f"m_{p_id}_{m_item['id']}",
-                name=m_item["name"],
-                base_url=template["base_url"],
-                api_key=key,
-                backup_api_keys=[],
-                model_id=m_item["model_id"],
-                fallback_model_ids=m_item.get("fallback_models", []),
-                provider_type="openai_compatible",
-                timeout_seconds=600,
-                is_arbiter=m_item.get("is_arbiter", False),
-                is_backup_arbiter=m_item.get("is_backup_arbiter", False),
-                enabled=True,
-                temperature=0.7
-            )
-            test_tasks.append((cfg, template, is_admin_fav))
-
-    async def _test_discovery(cfg: ModelConfig, template: dict, is_admin_fav: bool):
-        success, message, latency_ms, working_key = await UniversalAIClient.test_connectivity(cfg)
+    def _result_stub(cfg: ModelConfig, template: dict, is_admin_fav: bool, message: str):
         return {
             "model": cfg.model_dump(),
             "provider_name": template["provider_name"],
             "provider_id": template["provider_id"],
-            "success": success,
-            "latency_ms": round(latency_ms, 2),
+            "success": False,
+            "latency_ms": 0.0,
             "message": message,
             "is_admin_favorite": is_admin_fav
         }
 
     available_models = []
     unavailable_models = []
+    timed_out_count = 0
 
     if test_tasks:
-        results = await asyncio.gather(*[_test_discovery(cfg, tmpl, is_fav) for cfg, tmpl, is_fav in test_tasks], return_exceptions=True)
-        for r in results:
-            if isinstance(r, dict):
-                if r["success"]:
+        semaphore = asyncio.Semaphore(DISCOVERY_MAX_CONCURRENCY)
+
+        async def _test_discovery(cfg: ModelConfig, probe_cfg: ModelConfig, template: dict, is_admin_fav: bool):
+            async with semaphore:
+                try:
+                    success, message, latency_ms, _working_key = await UniversalAIClient.test_connectivity(probe_cfg)
+                except Exception as e:
+                    success, message, latency_ms = False, f"Probe error: {type(e).__name__}: {e}", 0.0
+            return {
+                "model": cfg.model_dump(),
+                "provider_name": template["provider_name"],
+                "provider_id": template["provider_id"],
+                "success": success,
+                "latency_ms": round(latency_ms or 0.0, 2),
+                "message": message,
+                "is_admin_favorite": is_admin_fav
+            }
+
+        jobs = [
+            (asyncio.ensure_future(_test_discovery(cfg, probe_cfg, tmpl, is_fav)), cfg, tmpl, is_fav)
+            for cfg, probe_cfg, tmpl, is_fav in test_tasks
+        ]
+        done, pending = await asyncio.wait(
+            [job[0] for job in jobs],
+            timeout=DISCOVERY_TOTAL_BUDGET_SECONDS
+        )
+
+        for task, cfg, tmpl, is_fav in jobs:
+            if task in done:
+                try:
+                    r = task.result()
+                except Exception as e:
+                    unavailable_models.append(_result_stub(cfg, tmpl, is_fav, f"Probe crashed: {type(e).__name__}: {e}"))
+                    continue
+                if r.get("success"):
                     available_models.append(r)
                 else:
                     unavailable_models.append(r)
+            else:
+                task.cancel()
+                timed_out_count += 1
+                unavailable_models.append(_result_stub(
+                    cfg, tmpl, is_fav,
+                    f"Not verified: discovery time budget of {DISCOVERY_TOTAL_BUDGET_SECONDS}s elapsed. Test this model individually."
+                ))
+
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     # Sort available models by latency (fastest first)
     available_models.sort(key=lambda x: x["latency_ms"])
@@ -424,7 +542,8 @@ async def auto_discover_models(payload: Dict[str, Any] = {}):
         "unavailable_models": unavailable_models,
         "discovered_models": available_models + unavailable_models,
         "admin_favorites_count": sum(1 for m in available_models if m["is_admin_favorite"]),
-        "total_tested": len(test_tasks)
+        "total_tested": len(test_tasks),
+        "not_verified_count": timed_out_count
     }
 
 

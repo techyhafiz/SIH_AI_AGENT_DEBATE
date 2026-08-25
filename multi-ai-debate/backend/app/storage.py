@@ -443,17 +443,28 @@ class SessionStorage:
                 folder_path = os.path.join(WORKSPACES_ROOT, folder)
                 if os.path.isdir(folder_path):
                     session_file = os.path.join(folder_path, "session_state.json")
-                    item = {"folder": folder, "path": folder_path, "has_session": False}
+                    item = {
+                        "folder": folder,
+                        "path": folder_path,
+                        "has_session": False,
+                        "modified_time": os.path.getmtime(session_file) if os.path.exists(session_file) else os.path.getmtime(folder_path)
+                    }
                     if os.path.exists(session_file):
                         try:
                             with open(session_file, "r", encoding="utf-8") as f:
                                 data = json.load(f)
                                 item["has_session"] = True
                                 item["session_id"] = data.get("session_id")
-                                item["session_title"] = data.get("session_title")
-                                item["status"] = data.get("status")
+                                item["session_title"] = data.get("session_title") or data.get("ps_code") or folder
+                                item["ps_code"] = data.get("ps_code", "")
+                                item["status"] = data.get("status", "saved")
+                                item["created_at"] = data.get("created_at")
                                 item["rounds_count"] = len(data.get("rounds", []))
+                                item["consensus_score"] = data.get("consensus_score", 0)
                         except Exception:
                             pass
                     results.append(item)
+            
+            # Sort newest first
+            results.sort(key=lambda x: x.get("modified_time", 0), reverse=True)
             return results

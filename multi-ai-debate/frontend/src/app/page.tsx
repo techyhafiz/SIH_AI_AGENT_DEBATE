@@ -56,8 +56,13 @@ import {
   Radio,
   HelpCircle,
   Server,
+  Database,
   ArrowRight,
   ArrowLeft,
+  History,
+  Power,
+  PowerOff,
+  FolderOpen,
   Star,
   CheckCircle
 } from 'lucide-react';
@@ -186,6 +191,10 @@ export default function HomePage() {
   // Modals & Drawers
   const [isStartModalOpen, setIsStartModalOpen] = useState(false);
   const [isInjectModalOpen, setIsInjectModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [savedWorkspaces, setSavedWorkspaces] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [disabledSessionModels, setDisabledSessionModels] = useState<Record<string, boolean>>({});
   const [selectedScratchpadModel, setSelectedScratchpadModel] = useState<DebaterResponse | null>(null);
   const [injectionText, setInjectionText] = useState('');
   
@@ -197,6 +206,9 @@ export default function HomePage() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [psList, setPsList] = useState<any[]>([]);
   const [psFilter, setPsFilter] = useState('');
+  const [selectedPsObj, setSelectedPsObj] = useState<any | null>(null);
+  const [psCategoryFilter, setPsCategoryFilter] = useState<'All' | 'Software' | 'Hardware'>('All');
+  const [isPsDropdownOpen, setIsPsDropdownOpen] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
   const [copiedVerdict, setCopiedVerdict] = useState(false);
 
@@ -253,7 +265,7 @@ export default function HomePage() {
     sendModeratorAction
   } = useDebateStream(sessionId);
 
-  // Initialize theme from localStorage
+  // Initialize theme & active session from localStorage
   useEffect(() => {
     const savedTheme = (localStorage.getItem('arena-theme') as 'light' | 'dark') || 'light';
     setTheme(savedTheme);
@@ -262,7 +274,20 @@ export default function HomePage() {
     } else {
       document.documentElement.classList.remove('dark');
     }
+
+    // Auto-restore active session if reloaded
+    const savedSessionId = localStorage.getItem('active_debate_session_id');
+    if (savedSessionId && !sessionId) {
+      setSessionId(savedSessionId);
+    }
   }, []);
+
+  // Update localStorage when sessionId changes
+  useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem('active_debate_session_id', sessionId);
+    }
+  }, [sessionId]);
 
   const toggleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : 'light';
@@ -427,7 +452,13 @@ export default function HomePage() {
         body: JSON.stringify({ provider_keys: wizardKeys })
       });
       if (!res.ok) {
-        const errText = await res.text();
+        const errText = (await res.text()).trim();
+        if (res.status === 500 && /^internal server error$/i.test(errText)) {
+          // Bare body = the Next dev proxy gave up on the backend, not a backend 500.
+          throw new Error(
+            'The backend did not respond in time. Confirm the API is running on http://127.0.0.1:8000 (open /health), then retry.'
+          );
+        }
         throw new Error(errText || `HTTP ${res.status}`);
       }
       const data = await res.json();
@@ -582,17 +613,57 @@ export default function HomePage() {
     setIsInjectModalOpen(false);
   };
 
+  const handleOpenHistory = async () => {
+    setIsHistoryModalOpen(true);
+    setIsLoadingHistory(true);
+    try {
+      const res = await fetch('/api/workspaces');
+      const data = await res.json();
+      setSavedWorkspaces(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      alert(`Error loading history: ${e.message}`);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleLoadSavedSession = (targetSessionId: string) => {
+    setSessionId(targetSessionId);
+    localStorage.setItem('active_debate_session_id', targetSessionId);
+    setIsHistoryModalOpen(false);
+    setActiveTab('arena');
+  };
+
+  const handleToggleModelTurnOff = async (modelId: string) => {
+    const isCurrentlyDisabled = !!disabledSessionModels[modelId];
+    const newDisabledState = !isCurrentlyDisabled;
+    
+    setDisabledSessionModels((prev) => ({
+      ...prev,
+      [modelId]: newDisabledState
+    }));
+
+    if (newDisabledState && sessionId) {
+      try {
+        await sendModeratorAction('drop_model', { target_model_id: modelId });
+      } catch (e) {}
+    }
+  };
+
   const filteredPs = useMemo(() => {
-    if (!psFilter.trim()) return psList.slice(0, 15);
-    const q = psFilter.toLowerCase();
-    return psList.filter(
-      (ps) =>
-        ps.ps_code?.toLowerCase().includes(q) ||
-        ps.title?.toLowerCase().includes(q) ||
-        ps.organization?.toLowerCase().includes(q) ||
-        ps.theme?.toLowerCase().includes(q)
-    ).slice(0, 15);
-  }, [psList, psFilter]);
+    let list = psList;
+    if (psCategoryFilter !== 'All') {
+      list = list.filter((ps) => (ps.category || '').toLowerCase() === psCategoryFilter.toLowerCase());
+    }
+    if (!psFilter.trim()) {
+      return list.slice(0, 25);
+    }
+    const tokens = psFilter.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    return list.filter((ps) => {
+      const haystack = `${ps.ps_code || ''} ${ps.ps_id || ''} ${ps.title || ''} ${ps.organization || ''} ${ps.department || ''} ${ps.theme || ''} ${ps.category || ''} ${ps.description || ''}`.toLowerCase();
+      return tokens.every((t) => haystack.includes(t));
+    }).slice(0, 30);
+  }, [psList, psFilter, psCategoryFilter]);
 
   const filteredFleet = useMemo(() => {
     return models.filter((m) => {
@@ -875,16 +946,21 @@ export default function HomePage() {
                 const tokenStream = activeTokens[m.id] || '';
                 const isArbiter = m.id === arbiterModelId;
                 const isBackupArbiter = m.id === backupArbiterModelId;
+                const isManuallyDisabled = !!disabledSessionModels[m.id];
 
                 return (
                   <div
                     key={m.id}
-                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition flex flex-col justify-between overflow-hidden"
+                    className={`rounded-2xl border shadow-sm hover:shadow-md transition flex flex-col justify-between overflow-hidden ${
+                      isManuallyDisabled
+                        ? 'bg-slate-100/70 dark:bg-slate-900/40 border-rose-200 dark:border-rose-900/50 opacity-60'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                    }`}
                   >
-                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                    <div className={`p-4 border-b ${isManuallyDisabled ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-100 dark:border-rose-900/30' : 'bg-slate-50/50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800'}`}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-sm text-slate-900 dark:text-white">{m.name}</span>
+                          <span className={`font-extrabold text-sm ${isManuallyDisabled ? 'text-rose-900 dark:text-rose-300 line-through' : 'text-slate-900 dark:text-white'}`}>{m.name}</span>
                           {isArbiter && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                               Primary Arbiter
@@ -895,27 +971,54 @@ export default function HomePage() {
                               Backup Arbiter
                             </span>
                           )}
+                          {isManuallyDisabled && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                              ⛔ Excluded
+                            </span>
+                          )}
                         </div>
 
-                        <div>
-                          {isStreaming ? (
-                            <span className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating...
-                            </span>
-                          ) : resp?.status === 'completed' ? (
-                            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Done
-                            </span>
-                          ) : resp?.status === 'timeout' ? (
-                            <span className="flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
-                              <AlertTriangle className="w-3.5 h-3.5" /> Timeout
-                            </span>
-                          ) : resp?.status === 'error' ? (
-                            <span className="flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400">
-                              <X className="w-3.5 h-3.5" /> Error
-                            </span>
+                        <div className="flex items-center gap-2">
+                          {isManuallyDisabled ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleModelTurnOff(m.id)}
+                              className="px-2 py-0.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[10px] font-bold flex items-center gap-1 transition"
+                              title="Turn Model Back On"
+                            >
+                              <Power className="w-3 h-3" /> Turn On
+                            </button>
                           ) : (
-                            <span className="text-[11px] text-slate-400 font-medium">Ready</span>
+                            <>
+                              {isStreaming ? (
+                                <span className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating...
+                                </span>
+                              ) : resp?.status === 'completed' ? (
+                                <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Done
+                                </span>
+                              ) : resp?.status === 'timeout' ? (
+                                <span className="flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                                  <AlertTriangle className="w-3.5 h-3.5" /> Timeout
+                                </span>
+                              ) : resp?.status === 'error' ? (
+                                <span className="flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                                  <X className="w-3.5 h-3.5" /> Error
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 font-medium">Ready</span>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleToggleModelTurnOff(m.id)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                title="Turn Off / Exclude this AI from debate"
+                              >
+                                <PowerOff className="w-3.5 h-3.5" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1976,7 +2079,12 @@ export default function HomePage() {
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{item.provider_name} · {m.model_id}</span>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                              <span>{item.provider_name} · {m.model_id}</span>
+                              {item.message && (
+                                <span className="text-emerald-600 dark:text-emerald-400">· {item.message.replace('Verified Online! Response: ', '✓ ')}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -2123,36 +2231,149 @@ export default function HomePage() {
               </button>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Search SIH Problem Statements (Database):
-              </label>
-              <input
-                type="text"
-                value={psFilter}
-                onChange={(e) => setPsFilter(e.target.value)}
-                placeholder="Filter by code, ministry, or keyword..."
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-              />
+            {/* SIH PROBLEM STATEMENT SELECTOR / SEARCH */}
+            <div className="space-y-3 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5" /> SIH Problem Statements Database ({psList.length > 0 ? `${psList.length} Loaded` : 'Loading...'})
+                </label>
+                {selectedPsObj && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPsObj(null);
+                      setProblemStatement('');
+                      setPsCode('');
+                      setMinistryDomain('Smart India Hackathon (General)');
+                      setIsPsDropdownOpen(true);
+                    }}
+                    className="text-[11px] font-bold text-rose-500 hover:underline flex items-center gap-1"
+                  >
+                    <X className="w-3 h-3" /> Clear Selection
+                  </button>
+                )}
+              </div>
 
-              {psList.length > 0 && (
-                <div className="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-                  {filteredPs.map((ps, idx) => (
+              {/* ACTIVE SELECTED STATEMENT PREVIEW CARD */}
+              {selectedPsObj ? (
+                <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-indigo-500/40 shadow-xs space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md text-[11px] font-black bg-indigo-600 text-white shadow-xs">
+                        {selectedPsObj.ps_code || selectedPsObj.ps_id}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        {selectedPsObj.category || 'Software'} · {selectedPsObj.theme || 'General'}
+                      </span>
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-xs">
+                        🏢 {selectedPsObj.organization}
+                      </span>
+                    </div>
+
                     <button
-                      key={idx}
-                      onClick={() => {
-                        setProblemStatement(ps.description || ps.title);
-                        setPsCode(ps.ps_code || ps.ps_id || '');
-                        setMinistryDomain(ps.organization || ps.theme || 'Smart India Hackathon');
-                      }}
-                      className="w-full p-2.5 text-left text-xs hover:bg-indigo-50/50 dark:hover:bg-indigo-950/50 transition flex items-center justify-between"
+                      type="button"
+                      onClick={() => setIsPsDropdownOpen(!isPsDropdownOpen)}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition shrink-0"
                     >
-                      <div className="truncate pr-2">
-                        <strong className="text-indigo-900 dark:text-indigo-300">{ps.ps_code || ps.ps_id}</strong> - {ps.title}
-                      </div>
-                      <span className="text-[10px] text-slate-400 shrink-0">{ps.organization}</span>
+                      {isPsDropdownOpen ? 'Close Search ▲' : 'Change PS ↺'}
                     </button>
-                  ))}
+                  </div>
+
+                  <h4 className="text-xs font-extrabold text-slate-900 dark:text-white leading-snug">
+                    {selectedPsObj.title}
+                  </h4>
+                </div>
+              ) : null}
+
+              {/* SEARCH & FILTER CONTROLS */}
+              {(!selectedPsObj || isPsDropdownOpen) && (
+                <div className="space-y-2">
+                  {/* Category Pills & Search Input */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {(['All', 'Software', 'Hardware'] as const).map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setPsCategoryFilter(cat)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                          psCategoryFilter === cat
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={psFilter}
+                      onFocus={() => setIsPsDropdownOpen(true)}
+                      onChange={(e) => {
+                        setPsFilter(e.target.value);
+                        setIsPsDropdownOpen(true);
+                      }}
+                      placeholder="Search by code (e.g. 26001), keyword (e.g. landslide, radar, AI), or ministry..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none pr-8"
+                    />
+                    {psFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setPsFilter('')}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* SEARCH RESULTS DROPDOWN */}
+                  <div className="max-h-52 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 shadow-lg">
+                    {filteredPs.length > 0 ? (
+                      filteredPs.map((ps, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            setSelectedPsObj(ps);
+                            setPsCode(ps.ps_code || ps.ps_id || '');
+                            setMinistryDomain(ps.organization || ps.department || ps.theme || 'Smart India Hackathon');
+                            const formatted = `[${ps.ps_code || ps.ps_id}] ${ps.title}\n\nOrganization: ${ps.organization}\nTheme: ${ps.theme} | Category: ${ps.category}\n\nProblem Description:\n${ps.description}\n\nExpected Solution Deliverables:\n${ps.expected_solution || ''}`;
+                            setProblemStatement(formatted);
+                            setIsPsDropdownOpen(false);
+                          }}
+                          className="p-3 text-left text-xs hover:bg-indigo-50/70 dark:hover:bg-indigo-950/60 cursor-pointer transition flex flex-col gap-1 group"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                {ps.ps_code || ps.ps_id}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-400">
+                                {ps.category} · {ps.theme}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold opacity-0 group-hover:opacity-100 transition">
+                              Select ➔
+                            </span>
+                          </div>
+
+                          <div className="font-bold text-slate-900 dark:text-white leading-tight">
+                            {ps.title}
+                          </div>
+
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
+                            {ps.description}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-4 text-center text-xs text-slate-400">
+                        No SIH problem statements matched "{psFilter}". You can enter custom text below.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2354,6 +2575,141 @@ export default function HomePage() {
                 className="px-5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition"
               >
                 Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SESSION HISTORY / SAVED WORKSPACES MODAL */}
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-2xl w-full p-6 lg:p-8 space-y-5 max-h-[85vh] flex flex-col justify-between">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    Saved Debate Sessions & History
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Switch between active live sessions or resume previous debate workspaces from disk.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenHistory}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-400 text-xs font-bold transition"
+                  title="Refresh List"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoadingHistory ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryModalOpen(false)}
+                  className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* List Container */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 max-h-96">
+              {isLoadingHistory ? (
+                <div className="py-12 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
+                  <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
+                  <span>Scanning saved workspaces on disk...</span>
+                </div>
+              ) : savedWorkspaces.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-400 space-y-2">
+                  <FolderOpen className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
+                  <p>No saved debate sessions found yet on disk.</p>
+                  <p className="text-[11px]">Start a new deliberation to create your first workspace.</p>
+                </div>
+              ) : (
+                savedWorkspaces.map((w, idx) => {
+                  const isCurrent = w.session_id === sessionId;
+                  const isLive = w.status === 'running' || w.status === 'live';
+                  const isCompleted = w.status === 'completed';
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isCurrent
+                          ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-800 ring-2 ring-indigo-500/20'
+                          : 'bg-slate-50/80 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800/80'
+                      }`}
+                    >
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-extrabold text-xs text-slate-900 dark:text-white truncate max-w-sm">
+                            {w.session_title || w.folder || 'Debate Session'}
+                          </h4>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            isLive
+                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 animate-pulse'
+                              : isCompleted
+                              ? 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300'
+                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                          }`}>
+                            {w.status || 'saved'}
+                          </span>
+                          {isCurrent && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-600 text-white">
+                              Active
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                          <span>Rounds: <b>{w.rounds_count || 0}</b></span>
+                          <span>·</span>
+                          <span className="truncate max-w-xs">{w.folder}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleLoadSavedSession(w.session_id)}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 shrink-0 ${
+                          isCurrent
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        {isCurrent ? 'Viewing Now' : 'Open & Resume'}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsHistoryModalOpen(false);
+                  setIsStartModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black transition shadow-xs flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Start New Deliberation
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition"
+              >
+                Close
               </button>
             </div>
           </div>

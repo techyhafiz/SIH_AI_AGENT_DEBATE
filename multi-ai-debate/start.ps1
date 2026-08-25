@@ -1,9 +1,9 @@
 # ====================================================================
-# AI Consensus Arena (SIH Super-Architecture) - Startup Script
+# Multi-AI Debate Arena - Dual Application Startup Launcher
 # ====================================================================
 
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host " Starting AI Consensus Arena (Multi-Model SIH Gauntlet)" -ForegroundColor Cyan
+Write-Host " Starting Multi-AI Debate Arena System" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 
 $RootPath = $PSScriptRoot
@@ -16,7 +16,7 @@ if (-not (Test-Path $BackendPath)) {
 }
 
 Write-Host ""
-Write-Host "[1/4] Checking environment & freeing ports..." -ForegroundColor Yellow
+Write-Host "[1/4] Checking environment & freeing ports 8000 and 3000..." -ForegroundColor Yellow
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     Write-Host "Error: Python is not installed or not in PATH." -ForegroundColor Red
     exit 1
@@ -27,7 +27,7 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# Free ports 8000 and 3000 if occupied by previous runs
+# Free ports 8000 and 3000
 try {
     $p8000 = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
     if ($p8000) { Stop-Process -Id $p8000 -Force -ErrorAction SilentlyContinue }
@@ -35,15 +35,15 @@ try {
     if ($p3000) { Stop-Process -Id $p3000 -Force -ErrorAction SilentlyContinue }
 } catch {}
 
-Write-Host "  OK: Environment ready & ports clean." -ForegroundColor Green
+Write-Host "  OK: Ports 8000 and 3000 are clean." -ForegroundColor Green
 
 Write-Host ""
-Write-Host "[2/4] Launching Backend Server on http://localhost:8000..." -ForegroundColor Yellow
+Write-Host "[2/4] Launching Backend & App #1 on http://localhost:8000..." -ForegroundColor Yellow
 $BackendCmd = "Set-Location -Path '$BackendPath'; python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "$BackendCmd" -WindowStyle Normal
 
 Write-Host ""
-Write-Host "[3/4] Launching Frontend Server on http://localhost:3000..." -ForegroundColor Yellow
+Write-Host "[3/4] Launching App #2 (Advanced Next.js Edition) on http://localhost:3000..." -ForegroundColor Yellow
 $FrontendCmd = "Set-Location -Path '$FrontendPath'; npm run dev"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "$FrontendCmd" -WindowStyle Normal
 
@@ -57,9 +57,8 @@ Start-Process "http://localhost:3000"
 
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Green
-Write-Host " BOTH SERVERS ARE RUNNING!" -ForegroundColor Green
-Write-Host "    - Frontend: http://localhost:3000" -ForegroundColor White
-Write-Host "    - Backend API Docs: http://localhost:8000/docs" -ForegroundColor White
+Write-Host " BOTH APPLICATIONS ARE RUNNING!" -ForegroundColor Green
+Write-Host "    - App #2 (Advanced Next.js Edition): http://localhost:3000" -ForegroundColor White
+Write-Host "    - App #1 (Original Standalone Edition): http://localhost:8000" -ForegroundColor White
+Write-Host "    - Backend API & Docs: http://localhost:8000/docs" -ForegroundColor White
 Write-Host "========================================================" -ForegroundColor Green
-Write-Host "Press any key to close this launcher window..."
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

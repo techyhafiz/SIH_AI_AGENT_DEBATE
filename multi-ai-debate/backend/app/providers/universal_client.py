@@ -228,15 +228,58 @@ class UniversalAIClient:
                         resp = await client.post(target_url, headers=headers, json=payload)
                         elapsed_ms = (asyncio.get_event_loop().time() - start_time) * 1000
                         
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            msg_obj = data.get("choices", [{}])[0].get("message", {})
-                            content = (msg_obj.get("content") or msg_obj.get("reasoning_content") or msg_obj.get("reasoning") or "READY")
-                            key_desc = f"Key #{key_idx + 1}" if len(candidate_keys) > 1 else "Primary Key"
-                            model_desc = f"Model '{model_id}'" if len(candidate_models) > 1 else ""
-                            return True, f"Connected with {key_desc} {model_desc}! Response: {str(content).strip()[:30]}", elapsed_ms, key
-                        else:
-                            last_err = f"HTTP {resp.status_code} on {model_id}: {resp.text}"
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        
+                        # 1. Check if error object exists in body
+                        if isinstance(data, dict) and "error" in data:
+                            err_val = data["error"]
+                            err_str = err_val.get("message", str(err_val)) if isinstance(err_val, dict) else str(err_val)
+                            last_err = f"API Error: {err_str}"
+                            continue
+
+                        # 2. Check choices array
+                        choices = data.get("choices", []) if isinstance(data, dict) else []
+                        if not isinstance(choices, list) or len(choices) == 0:
+                            last_err = "No choices returned in API response"
+                            continue
+
+                        first_choice = choices[0]
+                        if not isinstance(first_choice, dict):
+                            last_err = "Invalid choice format"
+                            continue
+
+                        msg_obj = first_choice.get("message", {})
+                        if not isinstance(msg_obj, dict):
+                            last_err = "Invalid message object"
+                            continue
+
+                        raw_content = msg_obj.get("content")
+                        reasoning = msg_obj.get("reasoning_content") or msg_obj.get("reasoning")
+                        content_str = str(raw_content if raw_content is not None else (reasoning if reasoning is not None else "")).strip()
+
+                        # 3. Fail if response content is completely empty
+                        if not content_str:
+                            last_err = "Empty token content returned by model"
+                            continue
+
+                        # 4. Fail if content contains quota/credit/plan rejection keywords
+                        lower_content = content_str.lower()
+                        error_keywords = [
+                            "insufficient quota", "insufficient credits", "exceeded your current quota",
+                            "requires credits", "no credits", "payment required", "out of credits",
+                            "not available on your plan", "not available on your tier", "plan does not allow",
+                            "unauthorized", "invalid api key", "[error:", "upstream error", "user not found"
+                        ]
+                        if any(kw in lower_content for kw in error_keywords):
+                            last_err = f"Plan restriction: {content_str[:80]}"
+                            continue
+
+                        key_desc = f"Key #{key_idx + 1}" if len(candidate_keys) > 1 else "Primary Key"
+                        model_desc = f"Model '{model_id}'" if len(candidate_models) > 1 else ""
+                        return True, f"Verified Online! Response: {content_str[:35]}", elapsed_ms, key
+                    else:
+                        last_err = f"HTTP {resp.status_code} on {model_id}: {resp.text[:120]}"
                 except Exception as e:
                     last_err = str(e)
 
@@ -321,19 +364,24 @@ class UniversalAIClient:
                                         break
                                     try:
                                         chunk_json = json.loads(data_str)
-                                        if "error" in chunk_json:
-                                            err_val = chunk_json["error"]
-                                            err_text = err_val.get("message", str(err_val)) if isinstance(err_val, dict) else str(err_val)
-                                            raise RuntimeError(f"Upstream provider error: {err_text}")
+                                        if isinstance(chunk_json, dict):
+                                            if "error" in chunk_json:
+                                                err_val = chunk_json["error"]
+                                                err_text = err_val.get("message", str(err_val)) if isinstance(err_val, dict) else str(err_val)
+                                                raise RuntimeError(f"Upstream provider error: {err_text}")
 
-                                        choices = chunk_json.get("choices") or []
-                                        delta_obj = choices[0].get("delta", {}) if len(choices) > 0 else {}
-                                        delta = delta_obj.get("content") or delta_obj.get("reasoning_content") or delta_obj.get("reasoning") or ""
-                                        if delta and isinstance(delta, str):
-                                            clean_delta = delta.strip()
-                                            if clean_delta.startswith("[error:") or "Upstream error for model" in clean_delta:
-                                                raise RuntimeError(f"Upstream provider error: {clean_delta}")
-                                            yield delta
+                                            choices = chunk_json.get("choices")
+                                            if isinstance(choices, list) and len(choices) > 0:
+                                                first_c = choices[0]
+                                                if isinstance(first_c, dict):
+                                                    delta_obj = first_c.get("delta")
+                                                    if isinstance(delta_obj, dict):
+                                                        delta = delta_obj.get("content") or delta_obj.get("reasoning_content") or delta_obj.get("reasoning") or ""
+                                                        if isinstance(delta, str) and delta:
+                                                            clean_delta = delta.strip()
+                                                            if clean_delta.startswith("[error:") or "Upstream error for model" in clean_delta:
+                                                                raise RuntimeError(f"Upstream provider error: {clean_delta}")
+                                                            yield delta
                                     except json.JSONDecodeError:
                                         if isinstance(data_str, str) and (data_str.startswith("[error:") or "Upstream error" in data_str):
                                             raise RuntimeError(f"Upstream provider error: {data_str}")
