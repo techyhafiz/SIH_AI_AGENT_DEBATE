@@ -3,15 +3,19 @@ export interface ModelConfig {
   name: string;
   base_url: string;
   api_key: string;
+  credential_ref?: string;
   backup_api_keys?: string[];
   model_id: string;
   fallback_model_ids?: string[];
-  provider_type: 'openai_compatible' | 'gemini_native';
+  provider_type: 'openai_compatible';
   timeout_seconds: number;
+  max_tokens?: number;
   is_arbiter: boolean;
   is_backup_arbiter?: boolean;
   enabled: boolean;
   temperature: number;
+  // Provider-native structured output for the arbiter's JSON turns.
+  json_mode?: 'auto' | 'json_object' | 'off';
 }
 
 export interface CritiqueItem {
@@ -44,14 +48,19 @@ export interface StructuredDebateTurn {
   security_compliance_lens?: string;
   security_reliability_lens?: string;
   critiques: CritiqueItem[];
+  self_identified_flaws?: string[];
   concessions_and_defenses: ConcessionItem[];
   refined_solution: string;
   positives_of_approach: string[];
   negatives_and_risks: string[];
   autonomous_research_calls?: AutonomousResearchCall[];
   research_queries_for_next_round?: string[];
-  consensus_vote: 'AGREE' | 'DISAGREE' | 'NEEDS_REFINEMENT';
-  agreement_percentage: number;
+  // null = the model never stated a readable position. It is NOT a dissent and NOT 0%:
+  // render it as "not scored" and leave it out of any average.
+  consensus_vote: 'AGREE' | 'DISAGREE' | 'NEEDS_REFINEMENT' | null;
+  agreement_percentage: number | null;
+  // false = the JSON contract was missed and the content below was recovered heuristically.
+  parse_ok?: boolean;
 }
 
 export interface DebaterResponse {
@@ -66,7 +75,6 @@ export interface DebaterResponse {
   status: 'streaming' | 'completed' | 'timeout' | 'error' | 'quarantined';
   elapsed_seconds: number;
   error_message?: string;
-  active_key_used?: string;
 }
 
 export interface FrictionPoint {
@@ -110,11 +118,14 @@ export interface PooledResearchDossier {
   dossier_text: string;
   web_summary: string;
   total_sources: number;
+  rendered_sources?: number;
   downloaded_papers_count: number;
 }
 
 export interface RoundData {
   round_number: number;
+  workspace_phase_number?: number;
+  workspace_phase_title?: string;
   phase_index: number;
   phase_title: string;
   pass_or_round_id?: string;
@@ -149,6 +160,7 @@ export interface DebateSession {
   backup_arbiter_model_id?: string;
   phases?: WorkspacePhase[];
   current_phase_index: number;
+  workspace_phase_number?: number;
   current_phase_title?: string;
   current_pass_id?: string;
   current_pass_title?: string;
@@ -158,6 +170,8 @@ export interface DebateSession {
   current_round_num: number;
   final_markdown_report?: string;
   latest_research_dossier?: PooledResearchDossier;
+  completed_research_steps?: string[];
+  error_message?: string;
   created_at: number;
 }
 
@@ -169,4 +183,3 @@ export interface TimeoutAlert {
   elapsed_seconds: number;
   error_message: string;
 }
-

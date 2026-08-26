@@ -35,7 +35,7 @@ Every AI simultaneously stress-tests solutions across **4 distinct cognitive per
 
 ### 1. Prerequisites
 - **Python 3.10+** installed on Windows, macOS, or Linux.
-- **No Node.js or npm required**: The web dashboard is self-contained and served directly by FastAPI.
+- **Node.js 18+ and npm** are required for the Next.js dashboard.
 
 ### 2. Clone & Install Dependencies
 ```bash
@@ -45,16 +45,24 @@ cd SIH_AI_AGENT_DEBATE/multi-ai-debate/backend
 
 # Install Python requirements
 pip install -r requirements.txt
+cd ../frontend
+npm install
 ```
 
 ### 3. Launch the Application
 ```bash
+# Terminal 1
+cd backend
 python run.py
+
+# Terminal 2
+cd frontend
+npm run dev
 ```
 
 ### 4. Open Dashboard
 Open your browser and navigate to:
-👉 **`http://localhost:8000/`**
+Open **`http://localhost:3000/`**. FastAPI runs locally at **`http://127.0.0.1:8000/`**.
 
 1. **Setup Wizard**: Enter your AI model endpoints and API keys (plus backup keys).
 2. **Select SIH Problem Statement**: Search by PS Code (e.g. `SIH26001`) or keywords (e.g. `Landslide`, `Railway`, `Agriculture`).
@@ -196,7 +204,7 @@ Every AI model analyzes the problem through four parallel personas:
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `GET /` | `GET` | Serves the interactive White-Theme SPA Dashboard |
+| `GET /` | `GET` | FastAPI service metadata; the Next.js dashboard runs on port 3000 |
 | `GET /health` | `GET` | Health check endpoint |
 | `GET /api/problem-statements?query={q}` | `GET` | Search 226+ SIH problem statements |
 | `GET /api/user/config` | `GET` | Fetch permanently saved user model configurations & keys |

@@ -39,7 +39,7 @@ Write-Host "  OK: Ports 8000 and 3000 are clean." -ForegroundColor Green
 
 Write-Host ""
 Write-Host "[2/4] Starting FastAPI Backend API Engine on port 8000..." -ForegroundColor Yellow
-$BackendCmd = "Set-Location -Path '$BackendPath'; python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+$BackendCmd = "Set-Location -Path '$BackendPath'; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "$BackendCmd" -WindowStyle Normal
 
 Write-Host ""

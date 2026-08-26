@@ -106,48 +106,73 @@ export function ArenaGrid({
 
             {/* Content Body */}
             <div className="p-4 flex-1 flex flex-col space-y-3 overflow-y-auto max-h-[580px]">
-              {/* Live Streaming Box */}
+              {/* Live Progress Status Indicator */}
               {isStreaming && (
-                <div className="p-3 rounded-xl bg-[#090d16] border border-[#232f48] font-mono text-[11px] text-gray-300 leading-relaxed max-h-48 overflow-y-auto">
-                  <div className="flex items-center gap-1.5 text-indigo-400 font-semibold mb-1 text-[10px]">
-                    <Zap className="w-3 h-3 animate-pulse" /> Live Thinking & Formulating Response...
+                <div className="p-3.5 rounded-xl bg-[#090d16] border border-indigo-500/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
+                      <Sparkles className="w-3.5 h-3.5 animate-spin text-cyan-400" /> Formulating Response...
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-cyan-400 animate-pulse">
+                      Active
+                    </span>
                   </div>
-                  {streamText || <span className="text-gray-600">Connecting to endpoint...</span>}
+                  <div className="w-full bg-[#161f33] h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-indigo-500 h-full rounded-full animate-pulse w-3/4" />
+                  </div>
+                  <p className="text-[10px] text-gray-400 italic">
+                    Synthesizing domain logic and architectural paradigms...
+                  </p>
                 </div>
               )}
 
               {/* Parsed Response & Multi-Personas */}
               {resp && resp.status === 'completed' && resp.structured && (
                 <>
-                  {/* Consensus Vote Pill */}
+                  {/* Consensus Vote Pill. A null vote means the model never stated a readable
+                      position - it is an abstention, not a DISAGREE, and it is excluded from the
+                      consensus average, so it must not be painted red. */}
                   <div className="flex items-center justify-between p-2 rounded-xl bg-[#161f33] border border-[#232f48]">
                     <span className="text-[10px] text-gray-400 font-semibold uppercase">Debater Vote</span>
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          resp.structured.consensus_vote === 'AGREE'
+                          !resp.structured.consensus_vote
+                            ? 'bg-slate-500/20 border-slate-500/30 text-slate-300'
+                            : resp.structured.consensus_vote === 'AGREE'
                             ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
                             : resp.structured.consensus_vote === 'NEEDS_REFINEMENT'
                             ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
                             : 'bg-rose-500/20 border-rose-500/30 text-rose-300'
                         }`}
+                        title={
+                          resp.structured.consensus_vote
+                            ? undefined
+                            : 'This turn did not return a readable position, so it is excluded from the consensus average.'
+                        }
                       >
-                        {resp.structured.consensus_vote} ({resp.structured.agreement_percentage}%)
+                        {resp.structured.consensus_vote
+                          ? `${resp.structured.consensus_vote}${
+                              resp.structured.agreement_percentage !== null &&
+                              resp.structured.agreement_percentage !== undefined
+                                ? ` (${resp.structured.agreement_percentage}%)`
+                                : ''
+                            }`
+                          : 'NOT SCORED'}
                       </span>
                     </div>
                   </div>
 
                   {/* Refined Solution Summary */}
-                  {resp.structured.refined_solution && (
-                    <div className="p-3 rounded-xl bg-[#161f33] border border-[#232f48] space-y-1">
-                      <div className="text-[11px] font-bold text-indigo-300 flex items-center gap-1.5">
-                        <Zap className="w-3.5 h-3.5 text-cyan-400" /> Proposed SIH Solution
-                      </div>
-                      <p className="text-xs text-gray-200 leading-relaxed">
-                        {resp.structured.refined_solution}
-                      </p>
+                  <div className="p-3 rounded-xl bg-[#161f33] border border-[#232f48] space-y-1">
+                    <div className="text-[11px] font-bold text-indigo-300 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-cyan-400" /> Proposed SIH Solution & Insights
                     </div>
-                  )}
+                    <p className="text-xs text-gray-200 leading-relaxed line-clamp-5">
+                      {resp.structured.refined_solution || resp.structured.architect_lens || resp.structured.critic_lens || resp.structured.field_hardware_lens || resp.structured.security_compliance_lens || resp.raw_text}
+                    </p>
+                  </div>
+
 
                   {/* 4 Cognitive Personas Accordion */}
                   <div className="space-y-1.5 pt-1">

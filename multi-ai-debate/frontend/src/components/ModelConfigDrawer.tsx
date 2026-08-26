@@ -78,6 +78,7 @@ export function ModelConfigDrawer({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          config_id: model.id,
           base_url: model.base_url,
           api_key: model.api_key,
           model_id: model.model_id,

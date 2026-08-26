@@ -2,6 +2,7 @@ import asyncio
 import time
 import json
 import os
+import re
 from typing import Dict, List, Optional, Set
 from app.schemas import (
     DebateSession,
@@ -25,76 +26,128 @@ from app.engine.prompts import (
     build_phase_3_round_prompt,
     build_phase_4_round_prompt,
     build_arbiter_evaluation_prompt,
-    build_final_markdown_report_prompt
+    build_final_markdown_report_prompt,
+    build_schema_guide,
+    get_phase_1_schema_guide,
+    classify_problem_domain
 )
 from app.engine.consensus_eval import (
     evaluate_round_consensus,
     generate_final_markdown_report
 )
-from app.storage import SessionStorage, UserConfigStorage, sanitize_folder_name
+from app.storage import SessionStorage, sanitize_folder_name
 from app.providers.research_engine import ResearchEngine
+
+# A heading-ish line: at least one leading marker (#, **, "3.", or an emoji) followed by a
+# lens keyword. Requiring a marker keeps ordinary prose that merely begins with the word
+# "Security" from being mistaken for a section heading.
+_HEAL_HEADING_PREFIX = (
+    r"^[ \t]{0,3}(?:#{1,6}[ \t]*|\*{2}[ \t]*|\d{1,2}[.)][ \t]*"
+    r"|[\U0001F300-\U0001FAFF☀-➿️][ \t]*)+"
+)
+_HEAL_HEADING_RES = [
+    (label, re.compile(_HEAL_HEADING_PREFIX + keyword, re.IGNORECASE | re.MULTILINE))
+    for label, keyword in [
+        ("architect", r"(?:Lead\s+)?Architect"),
+        ("critic", r"(?:Critic|Devil|Red[-\s]?Team|Murphy)"),
+        ("field", r"(?:Field|Hardware|BOM|Bill\s+of\s+Materials|Frugal|Pragmatist|Feasibilit)"),
+        ("security", r"(?:Security|Compliance|Fort\s+Knox|Reliabilit)"),
+        # Terminates the last lens without itself becoming a lens.
+        ("__end__", r"(?:Refined|Final\s+Solution|Conclusion|Consensus|Vote)"),
+    ]
+]
+
+
+def _extract_markdown_lenses(raw_text: str) -> Dict[str, str]:
+    """
+    Maps lens label -> section body for a response that came back as Markdown prose.
+
+    Each section runs from its own heading to the NEXT recognised heading, or to end-of-text.
+    The previous implementation used a lookahead that required a following `##` heading, so
+    whichever lens happened to be last - which is exactly what happens when output is cut off
+    mid-answer - matched nothing and was silently discarded.
+    """
+    found = []
+    for label, rx in _HEAL_HEADING_RES:
+        m = rx.search(raw_text)
+        if m:
+            found.append((m.start(), label))
+    found.sort()
+
+    out: Dict[str, str] = {}
+    for i, (start, label) in enumerate(found):
+        end = found[i + 1][0] if i + 1 < len(found) else len(raw_text)
+        if label != "__end__":
+            out[label] = raw_text[start:end].strip()
+    return out
+
 
 def heal_unstructured_turn(raw_text: str, model_name: str, ministry_domain: str = "Smart India Hackathon") -> StructuredDebateTurn:
     """
-    Intelligently converts raw unformatted or partial debater responses into standard StructuredDebateTurn.
-    Ensures that non-JSON markdown responses are extracted into proper lenses without losing data.
+    Converts a raw unformatted or partial debater response into a StructuredDebateTurn so
+    prose that missed the JSON contract is not thrown away.
+
+    What this function must NEVER do is invent a position. The previous version guessed a
+    `consensus_vote` and `agreement_percentage` from keyword matching ("agree" anywhere in
+    the text -> AGREE/85) and filled empty lenses with strings like "Security controls
+    integrated." Both fabrications then flowed into the consensus score and into the
+    arbiter's prompt as if they were the model's actual analysis. Healing recovers CONTENT
+    only; the position stays unset and `parse_ok` stays False.
     """
     if not raw_text or not raw_text.strip():
         return StructuredDebateTurn(
-            deliberation_scratchpad="No response content generated.",
-            refined_solution=f"Model '{model_name}' produced no text.",
-            consensus_vote="DISAGREE",
-            agreement_percentage=0
+            refined_solution="",
+            consensus_vote=None,
+            agreement_percentage=None,
+            parse_ok=False
         )
 
     # First attempt standard parse
     st = parse_structured_turn(raw_text)
-    if st.architect_lens or st.critic_lens or st.field_hardware_lens or st.security_compliance_lens or (st.refined_solution and st.refined_solution != raw_text):
+    if st.architect_lens or st.critic_lens or st.field_hardware_lens or st.security_compliance_lens:
         return st
 
     # Markdown Section Extraction Heuristics
-    architect = ""
-    critic = ""
-    hardware = ""
-    security = ""
+    sections = _extract_markdown_lenses(raw_text)
+    architect = sections.get("architect", "")
+    critic = sections.get("critic", "")
+    hardware = sections.get("field", "")
+    security = sections.get("security", "")
     solution = raw_text
 
-    # Extract sections using regex
-    arch_match = re.search(r"(?:###?\s*(?:1\.|Lead\s+)?Architect|🏛️|Architecture)[\s\S]*?(?=###?\s*(?:2\.|Critic|😈|3\.|Field|⚙️|4\.|Security|🛡️|###?\s*Refined|$))", raw_text, re.IGNORECASE)
-    if arch_match:
-        architect = arch_match.group(0).strip()
-
-    critic_match = re.search(r"(?:###?\s*(?:2\.|Critic|Devil|Red-Team|😈)[\s\S]*?)(?=###?\s*(?:3\.|Field|⚙️|4\.|Security|🛡️|###?\s*Refined|$))", raw_text, re.IGNORECASE)
-    if critic_match:
-        critic = critic_match.group(0).strip()
-
-    field_match = re.search(r"(?:###?\s*(?:3\.|Field|Hardware|BOM|⚙️)[\s\S]*?)(?=###?\s*(?:4\.|Security|🛡️|###?\s*Refined|$))", raw_text, re.IGNORECASE)
-    if field_match:
-        hardware = field_match.group(0).strip()
-
-    sec_match = re.search(r"(?:###?\s*(?:4\.|Security|Compliance|Fort\s+Knox|🛡️)[\s\S]*?)(?=###?\s*Refined|###?\s*Conclusion|$)", raw_text, re.IGNORECASE)
-    if sec_match:
-        security = sec_match.group(0).strip()
-
-    vote = "DISAGREE"
-    pct = 50
-    lower = raw_text.lower()
-    if "agree" in lower and "disagree" not in lower:
-        vote = "AGREE"
-        pct = 85
-    elif "refinement" in lower or "iterate" in lower:
-        vote = "NEEDS_REFINEMENT"
-        pct = 65
+    # Recover the vote ONLY if the model stated it explicitly and unambiguously in prose.
+    # Anything less stays None: an abstention is excluded from the consensus average, a
+    # guessed vote silently corrupts it.
+    vote = None
+    pct = None
+    explicit_vote = re.search(
+        r"consensus[_\s]*vote\s*[\"']?\s*[:=]\s*[\"']?\s*(AGREE|DISAGREE|NEEDS[_\s]?REFINEMENT)",
+        raw_text, re.IGNORECASE
+    )
+    if explicit_vote:
+        vote = explicit_vote.group(1).upper().replace(" ", "_")
+    explicit_pct = re.search(
+        r"agreement[_\s]*percentage\s*[\"']?\s*[:=]\s*[\"']?\s*(\d{1,3})",
+        raw_text, re.IGNORECASE
+    )
+    if explicit_pct:
+        try:
+            pct = max(0, min(100, int(explicit_pct.group(1))))
+        except Exception:
+            pct = None
 
     return StructuredDebateTurn(
-        deliberation_scratchpad=f"Extracted from {model_name} response.",
-        architect_lens=architect[:1500] if architect else "High-level architecture integrated in refined solution.",
-        critic_lens=critic[:1500] if critic else "Edge cases analyzed in main deliverable.",
-        field_hardware_lens=hardware[:1500] if hardware else "Hardware components specified in solution.",
-        security_compliance_lens=security[:1500] if security else "Security controls integrated.",
+        architect_lens=architect[:4000],
+        critic_lens=critic[:4000],
+        critic_devil_advocate_lens=critic[:4000],
+        field_hardware_lens=hardware[:4000],
+        pragmatist_feasibility_lens=hardware[:4000],
+        security_compliance_lens=security[:4000],
+        security_reliability_lens=security[:4000],
         refined_solution=solution,
         consensus_vote=vote,
-        agreement_percentage=pct
+        agreement_percentage=pct,
+        parse_ok=False
     )
 
 
@@ -128,6 +181,11 @@ DELIBERATION_PIPELINE = [
     {"phase_index": 4, "phase_title": "Phase 4: Convergence Crucible", "pass_id": "4.1", "pass_title": "Round 4.1: 🤝 Concession Treaty & Master Assembly", "is_research": False}
 ]
 
+# Character ceiling for an assembled debater prompt. Raised from the old 30,000 because that
+# limit was routinely hit once peer transcripts and the research dossier were included, and
+# the excess was cut from the tail - which is exactly where the output contract lives.
+DEBATER_PROMPT_LIMIT = 80000
+
 class DebateOrchestrator:
     _event_queues: Dict[str, Set[asyncio.Queue]] = {}
     _running_tasks: Dict[str, asyncio.Task] = {}
@@ -135,13 +193,14 @@ class DebateOrchestrator:
     _quarantined_models: Dict[str, Set[str]] = {}
     _pending_injections: Dict[str, str] = {}
     _pause_flags: Dict[str, asyncio.Event] = {}
-    _arbiter_messages_history: Dict[str, List[dict]] = {}
+    _quarantine_strikes: Dict[str, Dict[str, int]] = {}
+    _control_locks: Dict[str, asyncio.Lock] = {}
 
     @classmethod
     def get_event_queue(cls, session_id: str) -> asyncio.Queue:
         if session_id not in cls._event_queues:
             cls._event_queues[session_id] = set()
-        q = asyncio.Queue()
+        q = asyncio.Queue(maxsize=1000)
         cls._event_queues[session_id].add(q)
         return q
 
@@ -149,6 +208,8 @@ class DebateOrchestrator:
     def remove_event_queue(cls, session_id: str, q: asyncio.Queue):
         if session_id in cls._event_queues and q in cls._event_queues[session_id]:
             cls._event_queues[session_id].remove(q)
+            if not cls._event_queues[session_id]:
+                cls._event_queues.pop(session_id, None)
 
     @classmethod
     async def broadcast_event(cls, session_id: str, event_type: str, data: dict):
@@ -161,9 +222,93 @@ class DebateOrchestrator:
         }
         for q in list(cls._event_queues[session_id]):
             try:
-                await q.put(payload)
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                if event_type == "MODEL_TOKEN_DELTA":
+                    continue
+                try:
+                    q.get_nowait()
+                    q.put_nowait(payload)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass
             except Exception:
                 pass
+
+    @staticmethod
+    def _fit_debater_prompt(assembled: str, contract_tail: str, limit: int) -> str:
+        """
+        Guarantees two invariants for every debater prompt:
+          1. The output contract is the LAST thing the model reads (recency position).
+          2. Truncation removes evidence from the middle, never the contract from the tail.
+
+        The research dossier used to be appended after the contract, and any overflow was cut
+        with `[:30000]`, so on a long round the model received a transcript with no schema at
+        all and answered in prose. Every such turn was scored as a non-submission.
+        """
+        core = assembled
+        if contract_tail and contract_tail in core:
+            core = core.replace(contract_tail, "").rstrip()
+
+        reserve = len(contract_tail) + 200
+        budget = max(2000, limit - reserve)
+        if len(core) > budget:
+            head_len = int(budget * 0.55)
+            tail_len = budget - head_len - 200
+            notice = (
+                "\n\n[...middle of the evidence body truncated to fit the provider context window. "
+                "Everything above and below is intact; reason only from what is present....]\n\n"
+            )
+            core = core[:head_len] + notice + core[-tail_len:]
+
+        return f"{core}\n\n{contract_tail}" if contract_tail else core
+
+    @classmethod
+    def start_session(cls, session_id: str, auto_advance: bool = True) -> asyncio.Task:
+        existing = cls._running_tasks.get(session_id)
+        if existing and not existing.done():
+            return existing
+        task = asyncio.create_task(cls.run_round_loop(session_id, auto_advance=auto_advance))
+        cls._running_tasks[session_id] = task
+        return task
+
+    @classmethod
+    async def ensure_stopped(cls, session_id: str) -> None:
+        await cls._cancel_active_tasks(session_id)
+        task = cls._running_tasks.get(session_id)
+        if task and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if cls._running_tasks.get(session_id) is task:
+            cls._running_tasks.pop(session_id, None)
+
+    @classmethod
+    def control_lock(cls, session_id: str) -> asyncio.Lock:
+        return cls._control_locks.setdefault(session_id, asyncio.Lock())
+
+    @classmethod
+    async def _cancel_active_tasks(cls, session_id: str) -> None:
+        children = list(cls._running_round_tasks.get(session_id, {}).values())
+        for child in children:
+            if not child.done():
+                child.cancel()
+        if children:
+            await asyncio.gather(*children, return_exceptions=True)
+
+        parent = cls._running_tasks.get(session_id)
+        current = asyncio.current_task()
+        if parent and parent is not current and not parent.done():
+            parent.cancel()
+            await asyncio.gather(parent, return_exceptions=True)
+
+    @classmethod
+    def cleanup_session(cls, session_id: str, remove_subscribers: bool = False) -> None:
+        cls._running_round_tasks.pop(session_id, None)
+        cls._pause_flags.pop(session_id, None)
+        cls._quarantined_models.pop(session_id, None)
+        cls._quarantine_strikes.pop(session_id, None)
+        cls._pending_injections.pop(session_id, None)
+        if remove_subscribers:
+            cls._event_queues.pop(session_id, None)
 
     @classmethod
     async def _execute_single_model_turn(
@@ -194,18 +339,9 @@ class DebateOrchestrator:
                 for m in session.models:
                     if m.id == cfg.id:
                         m.api_key = working_key
+                        m.model_id = cfg.model_id
                         break
                 await SessionStorage.save_session(session)
-
-            try:
-                user_models = await UserConfigStorage.get_user_config()
-                for m in user_models:
-                    if m.id == cfg.id or m.name == cfg.name:
-                        m.api_key = working_key
-                        break
-                await UserConfigStorage.save_user_config(user_models)
-            except Exception as err:
-                print(f"Error persisting promoted key: {err}")
 
             await cls.broadcast_event(session_id, "BACKUP_KEY_PROMOTED", {
                 "model_id": cfg.id,
@@ -215,23 +351,30 @@ class DebateOrchestrator:
 
         try:
             total_timeout = float(model_config.timeout_seconds or 600)
-            FIRST_TOKEN_TIMEOUT = 120.0
+            FIRST_TOKEN_TIMEOUT = min(120.0, total_timeout)
 
+            deadline = asyncio.get_running_loop().time() + total_timeout
+            last_attempt_text: list[str] = []
             for attempt in [1, 2]:
-                accumulated_text = ""
-                first_token_event = asyncio.Event()
+                # Create a fresh text buffer and event for each attempt
+                attempt_accumulated: list[str] = []
+                last_attempt_text = attempt_accumulated
+                attempt_event = asyncio.Event()
 
-                async def _stream_collector(attempt_num: int):
-                    nonlocal accumulated_text
+                # IMPORTANT: pass event and buffer as default arguments to avoid Python closure capture bug.
+                async def _stream_collector(
+                    _evt: asyncio.Event = attempt_event,
+                    _buf: list = attempt_accumulated,
+                ):
                     async for token in UniversalAIClient.stream_chat(
                         config=model_config,
                         messages=messages,
                         temperature=model_config.temperature,
                         on_key_promoted_cb=_on_key_promoted
                     ):
-                        if not first_token_event.is_set():
-                            first_token_event.set()
-                        accumulated_text += token
+                        if not _evt.is_set():
+                            _evt.set()
+                        _buf.append(token)
                         await cls.broadcast_event(session_id, "MODEL_TOKEN_DELTA", {
                             "model_id": model_config.id,
                             "delta": token,
@@ -239,43 +382,80 @@ class DebateOrchestrator:
                             "pass_id": pass_id
                         })
 
-                collector_task = asyncio.create_task(_stream_collector(attempt))
+                collector_task = asyncio.create_task(_stream_collector())
 
                 if attempt == 1:
                     try:
-                        await asyncio.wait_for(first_token_event.wait(), timeout=FIRST_TOKEN_TIMEOUT)
-                        remaining = max(10.0, total_timeout - (time.time() - start_time))
+                        remaining = deadline - asyncio.get_running_loop().time()
+                        if remaining <= 0:
+                            raise asyncio.TimeoutError
+                        first_token_task = asyncio.create_task(attempt_event.wait())
+                        done, _ = await asyncio.wait(
+                            {first_token_task, collector_task},
+                            timeout=min(FIRST_TOKEN_TIMEOUT, remaining),
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        if collector_task in done:
+                            first_token_task.cancel()
+                            await asyncio.gather(first_token_task, return_exceptions=True)
+                            await collector_task
+                        elif first_token_task not in done:
+                            first_token_task.cancel()
+                            await asyncio.gather(first_token_task, return_exceptions=True)
+                            raise asyncio.TimeoutError
+                        remaining = deadline - asyncio.get_running_loop().time()
+                        if remaining <= 0:
+                            raise asyncio.TimeoutError
                         await asyncio.wait_for(collector_task, timeout=remaining)
+                        accumulated_text = "".join(attempt_accumulated)
                         break
                     except asyncio.TimeoutError:
                         collector_task.cancel()
-                        if not first_token_event.is_set():
-                            rotated_key_msg = ""
-                            if model_config.backup_api_keys and len(model_config.backup_api_keys) > 0:
-                                old_key = model_config.api_key
-                                new_key = model_config.backup_api_keys.pop(0)
-                                model_config.backup_api_keys.append(old_key)
-                                model_config.api_key = new_key
-                                await _on_key_promoted(model_config, new_key)
-                                rotated_key_msg = f" (switched to backup key {new_key[:6]}...)"
+                        try:
+                            await collector_task
+                        except asyncio.CancelledError:
+                            if not collector_task.cancelled():
+                                raise
+                        except Exception:
+                            pass
+                        accumulated_text = "".join(attempt_accumulated)
 
-                            print(f"[AUTO-RETRY] Model '{model_config.name}' sent 0 words in 2 mins. Retrying on Attempt 2{rotated_key_msg}...")
+                        if not attempt_event.is_set():
+                            print(f"[AUTO-RETRY] Model '{model_config.name}' sent 0 words before its first-token deadline. Retrying once...")
                             await cls.broadcast_event(session_id, "MODEL_RETRY_ATTEMPT", {
                                 "model_id": model_config.id,
                                 "model_name": model_config.name,
                                 "round_number": round_number,
                                 "attempt": 2,
-                                "message": f"Auto-retrying on Attempt 2{rotated_key_msg}..."
+                                "message": "Auto-retrying once within the configured turn deadline..."
                             })
                             continue
                         else:
-                            raise asyncio.TimeoutError()
+                            print(f"[PARTIAL] Model '{model_config.name}' timed out mid-stream after {len(accumulated_text)} chars.")
+                            raise asyncio.TimeoutError
                 else:
-                    remaining = max(15.0, total_timeout - (time.time() - start_time))
-                    await asyncio.wait_for(collector_task, timeout=remaining)
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError
+                    try:
+                        await asyncio.wait_for(collector_task, timeout=remaining)
+                    except asyncio.TimeoutError:
+                        collector_task.cancel()
+                        try:
+                            await collector_task
+                        except asyncio.CancelledError:
+                            if not collector_task.cancelled():
+                                raise
+                        except Exception:
+                            pass
+                        raise
+                    accumulated_text = "".join(attempt_accumulated)
+
                     break
             
             clean_text = accumulated_text.strip()
+            if not clean_text:
+                raise RuntimeError("Model returned no usable token content.")
             if clean_text.startswith("[error:") or "Upstream error for model" in clean_text or clean_text.startswith('{"error":'):
                 raise RuntimeError(clean_text)
 
@@ -292,9 +472,13 @@ class DebateOrchestrator:
                 raw_text=accumulated_text,
                 structured=structured,
                 status="completed",
-                elapsed_seconds=elapsed,
-                active_key_used=model_config.api_key
+                elapsed_seconds=elapsed
             )
+
+            live_sess = await SessionStorage.get_session(session_id)
+            if live_sess and live_sess.rounds and live_sess.rounds[-1].round_number == round_number:
+                live_sess.rounds[-1].responses[resp.model_id] = resp
+                await SessionStorage.save_session(live_sess)
 
             await cls.broadcast_event(session_id, "MODEL_STREAM_END", {
                 "model_id": model_config.id,
@@ -305,28 +489,19 @@ class DebateOrchestrator:
                 "round_number": round_number,
                 "status": "completed",
                 "structured": structured.model_dump(),
-                "elapsed_seconds": elapsed
+                "elapsed_seconds": elapsed,
+                "response": resp.model_dump()
             })
-
-            # Atomic turn persistence
-            try:
-                live_sess = await SessionStorage.get_session(session_id)
-                if live_sess and live_sess.rounds and live_sess.rounds[-1].round_number == round_number:
-                    live_sess.rounds[-1].responses[resp.model_id] = resp
-                    await SessionStorage.save_session(live_sess)
-            except Exception:
-                pass
 
             return resp
 
+        except asyncio.CancelledError:
+            raise
         except asyncio.TimeoutError:
             elapsed = time.time() - start_time
             err_msg = f"Model '{model_config.name}' exceeded timeout ({model_config.timeout_seconds}s)."
+            partial_text = "".join(locals().get("last_attempt_text", [])).strip()
             
-            if session_id not in cls._quarantined_models:
-                cls._quarantined_models[session_id] = set()
-            cls._quarantined_models[session_id].add(model_config.id)
-
             resp = DebaterResponse(
                 model_id=model_config.id,
                 model_name=model_config.name,
@@ -334,12 +509,17 @@ class DebateOrchestrator:
                 pass_or_round_id=pass_id,
                 pass_or_round_title=pass_title,
                 round_number=round_number,
-                raw_text="",
-                structured=StructuredDebateTurn(refined_solution=err_msg),
+                raw_text=partial_text,
+                structured=parse_structured_turn(partial_text) if partial_text else StructuredDebateTurn(refined_solution=err_msg),
                 status="timeout",
                 elapsed_seconds=elapsed,
                 error_message=err_msg
             )
+
+            live_sess = await SessionStorage.get_session(session_id)
+            if live_sess and live_sess.rounds and live_sess.rounds[-1].round_number == round_number:
+                live_sess.rounds[-1].responses[resp.model_id] = resp
+                await SessionStorage.save_session(live_sess)
 
             await cls.broadcast_event(session_id, "MODEL_STREAM_END", {
                 "model_id": model_config.id,
@@ -349,7 +529,10 @@ class DebateOrchestrator:
                 "pass_title": pass_title,
                 "round_number": round_number,
                 "status": "timeout",
-                "error_message": err_msg
+                "structured": resp.structured.model_dump(),
+                "elapsed_seconds": elapsed,
+                "error_message": err_msg,
+                "response": resp.model_dump()
             })
 
             await cls.broadcast_event(session_id, "MODEL_TIMEOUT_ALERT", {
@@ -366,11 +549,8 @@ class DebateOrchestrator:
         except Exception as e:
             elapsed = time.time() - start_time
             err_msg = f"Error for Model '{model_config.name}': {str(e)}"
+            partial_text = "".join(locals().get("last_attempt_text", [])).strip()
             
-            if session_id not in cls._quarantined_models:
-                cls._quarantined_models[session_id] = set()
-            cls._quarantined_models[session_id].add(model_config.id)
-
             resp = DebaterResponse(
                 model_id=model_config.id,
                 model_name=model_config.name,
@@ -378,12 +558,17 @@ class DebateOrchestrator:
                 pass_or_round_id=pass_id,
                 pass_or_round_title=pass_title,
                 round_number=round_number,
-                raw_text="",
-                structured=StructuredDebateTurn(refined_solution=err_msg),
+                raw_text=partial_text,
+                structured=parse_structured_turn(partial_text) if partial_text else StructuredDebateTurn(refined_solution=err_msg),
                 status="error",
                 elapsed_seconds=elapsed,
                 error_message=err_msg
             )
+
+            live_sess = await SessionStorage.get_session(session_id)
+            if live_sess and live_sess.rounds and live_sess.rounds[-1].round_number == round_number:
+                live_sess.rounds[-1].responses[resp.model_id] = resp
+                await SessionStorage.save_session(live_sess)
 
             await cls.broadcast_event(session_id, "MODEL_STREAM_END", {
                 "model_id": model_config.id,
@@ -393,7 +578,10 @@ class DebateOrchestrator:
                 "pass_title": pass_title,
                 "round_number": round_number,
                 "status": "error",
-                "error_message": err_msg
+                "structured": resp.structured.model_dump(),
+                "elapsed_seconds": elapsed,
+                "error_message": err_msg,
+                "response": resp.model_dump()
             })
 
             await cls.broadcast_event(session_id, "MODEL_ERROR_ALERT", {
@@ -407,6 +595,32 @@ class DebateOrchestrator:
 
     @classmethod
     async def run_round_loop(cls, session_id: str, auto_advance: bool = True):
+        try:
+            await cls._run_round_loop(session_id, auto_advance=auto_advance)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            session = await SessionStorage.get_session(session_id)
+            if session:
+                session.status = "error"
+                session.error_message = str(exc)
+                try:
+                    await SessionStorage.save_session(session)
+                except Exception:
+                    pass
+            await cls.broadcast_event(session_id, "DEBATE_ERROR", {"message": str(exc), "status": "error"})
+        finally:
+            await cls._cancel_active_tasks(session_id)
+            current = asyncio.current_task()
+            if cls._running_tasks.get(session_id) is current:
+                cls._running_tasks.pop(session_id, None)
+            cls._running_round_tasks.pop(session_id, None)
+            final_session = await SessionStorage.get_session(session_id)
+            if final_session and final_session.status in {"completed", "error"}:
+                cls.cleanup_session(session_id)
+
+    @classmethod
+    async def _run_round_loop(cls, session_id: str, auto_advance: bool = True):
         session = await SessionStorage.get_session(session_id)
         if not session:
             return
@@ -415,22 +629,51 @@ class DebateOrchestrator:
             cls._pause_flags[session_id] = asyncio.Event()
         cls._pause_flags[session_id].set()
 
-        arbiter_config = next((m for m in session.models if m.id == session.arbiter_model_id or m.is_arbiter), session.models[0])
+        # D5: classify once, lazily, so sessions created before this field existed also get
+        # a domain. The classifier picks which lens set and which cost/BOM section spec the
+        # prompts use - a pure-software problem should not be asked for battery discharge
+        # curves and a 45C ambient analysis.
+        if not session.problem_domain:
+            session.problem_domain = classify_problem_domain(
+                f"{session.problem_statement}\n{session.ministry_domain}\n{session.additional_prompt or ''}"
+            )
+            print(f"[DOMAIN] Session {session_id} classified as '{session.problem_domain}'.")
+            await SessionStorage.save_session(session)
+
+        arbiter_config = next(
+            (m for m in session.models if m.id == session.arbiter_model_id or m.is_arbiter),
+            (session.models[0] if session.models else ModelConfig(id="arbiter", name="Supreme Arbiter", base_url="", api_key="", model_id=""))
+        )
 
         session.status = "running"
         await SessionStorage.save_session(session)
         await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "running"})
 
-        # Map existing rounds to determine next step in pipeline
+        # Map existing rounds to determine next step in pipeline (including research blocks)
         pipeline_index = 0
         if session.rounds:
-            completed_pass_ids = [r.pass_or_round_id for r in session.rounds if r.completed_at]
+            completed_pass_ids = {
+                r.pass_or_round_id
+                for r in session.rounds
+                if r.completed_at and r.workspace_phase_number == session.workspace_phase_number
+            }
+            completed_pass_ids.update({
+                item.split(":", 1)[1]
+                for item in session.completed_research_steps
+                if item.startswith(f"{session.workspace_phase_number}:")
+            })
             for idx, step in enumerate(DELIBERATION_PIPELINE):
-                if step["pass_id"] not in completed_pass_ids:
+                # Step is done if its own pass_id is completed or if any subsequent step was completed
+                is_step_done = (step["pass_id"] in completed_pass_ids) or any(
+                    later_step["pass_id"] in completed_pass_ids
+                    for later_step in DELIBERATION_PIPELINE[idx + 1:]
+                )
+                if not is_step_done:
                     pipeline_index = idx
                     break
             else:
                 pipeline_index = len(DELIBERATION_PIPELINE)
+
 
         latest_research_dossier: Optional[PooledResearchDossier] = session.latest_research_dossier
 
@@ -488,8 +731,17 @@ class DebateOrchestrator:
                         "pass_id": pass_id,
                         "dossier": dossier.model_dump()
                     })
+                    research_key = f"{session.workspace_phase_number}:{pass_id}"
+                    if research_key not in session.completed_research_steps:
+                        session.completed_research_steps.append(research_key)
+                    await SessionStorage.save_session(session)
                 except Exception as re_err:
                     print(f"Error in research block {pass_id}: {re_err}")
+                    session.status = "paused"
+                    await SessionStorage.save_session(session)
+                    await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "paused"})
+                    await cls.broadcast_event(session_id, "ROUND_FAILED", {"message": f"Research block {pass_id} failed: {re_err}"})
+                    break
 
                 pipeline_index += 1
                 continue
@@ -501,6 +753,7 @@ class DebateOrchestrator:
 
             new_round = RoundData(
                 round_number=current_round_num,
+                workspace_phase_number=session.workspace_phase_number,
                 phase_index=phase_index,
                 phase_title=phase_title,
                 pass_or_round_id=pass_id,
@@ -524,64 +777,85 @@ class DebateOrchestrator:
             active_models = [m for m in session.models if m.enabled and m.id not in quarantined]
 
             if not active_models:
+                session.rounds.pop()
                 await cls.broadcast_event(session_id, "ALL_MODELS_UNAVAILABLE", {
                     "message": "All models are currently quarantined or disabled."
                 })
                 cls._pause_flags[session_id].clear()
                 session.status = "paused"
                 await SessionStorage.save_session(session)
+                await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "paused"})
                 break
+
+            effective_problem = session.current_phase_prompt if (session.current_phase_prompt and session.current_phase_prompt.strip()) else session.problem_statement
 
             model_tasks: Dict[str, asyncio.Task] = {}
             for m in active_models:
-                sys_prompt = build_system_prompt_for_debater(m.name, session.ministry_domain)
-                
+                sys_prompt = build_system_prompt_for_debater(
+                    m.name, session.ministry_domain, problem_domain=session.problem_domain
+                )
+
                 # Build specific prompt according to phase
                 if phase_index == 1:
                     my_prior_passes: Dict[str, str] = {}
                     for r in session.rounds[:-1]:
-                        if r.phase_index == 1 and m.id in r.responses:
+                        if r.workspace_phase_number == session.workspace_phase_number and r.phase_index == 1 and m.id in r.responses:
                             my_prior_passes[r.pass_or_round_id] = r.responses[m.id].structured.refined_solution or r.responses[m.id].raw_text
                     usr_prompt = build_phase_1_pass_prompt(
                         pass_id=pass_id,
-                        problem_statement=session.problem_statement,
+                        problem_statement=effective_problem,
                         ministry_domain=session.ministry_domain,
                         my_prior_passes=my_prior_passes,
-                        prior_phases=session.phases
+                        prior_phases=session.phases,
+                        problem_domain=session.problem_domain
                     )
+                    contract_tail = get_phase_1_schema_guide(pass_id, session.problem_domain)
                 elif phase_index == 2:
                     usr_prompt = build_phase_2_round_prompt(
                         round_id=pass_id,
                         round_number=current_round_num,
-                        problem_statement=session.problem_statement,
+                        problem_statement=effective_problem,
                         my_model_config=m,
                         all_models=session.models,
-                        previous_rounds=session.rounds[:-1],
-                        moderator_injection=moderator_injection
+                        previous_rounds=[r for r in session.rounds[:-1] if r.workspace_phase_number == session.workspace_phase_number],
+                        moderator_injection=moderator_injection,
+                        problem_domain=session.problem_domain
                     )
+                    contract_tail = build_schema_guide(session.problem_domain)
                 elif phase_index == 3:
                     usr_prompt = build_phase_3_round_prompt(
                         round_id=pass_id,
                         round_number=current_round_num,
-                        problem_statement=session.problem_statement,
+                        problem_statement=effective_problem,
                         my_model_config=m,
                         all_models=session.models,
-                        previous_rounds=session.rounds[:-1],
-                        moderator_injection=moderator_injection
+                        previous_rounds=[r for r in session.rounds[:-1] if r.workspace_phase_number == session.workspace_phase_number],
+                        moderator_injection=moderator_injection,
+                        problem_domain=session.problem_domain
                     )
+                    contract_tail = build_schema_guide(session.problem_domain)
                 else: # Phase 4
                     usr_prompt = build_phase_4_round_prompt(
                         round_id=pass_id,
                         round_number=current_round_num,
-                        problem_statement=session.problem_statement,
+                        problem_statement=effective_problem,
                         my_model_config=m,
                         all_models=session.models,
-                        previous_rounds=session.rounds[:-1],
-                        moderator_injection=moderator_injection
+                        previous_rounds=[r for r in session.rounds[:-1] if r.workspace_phase_number == session.workspace_phase_number],
+                        moderator_injection=moderator_injection,
+                        problem_domain=session.problem_domain
                     )
+                    contract_tail = build_schema_guide(session.problem_domain)
 
                 if latest_research_dossier and latest_research_dossier.dossier_text:
                     usr_prompt = f"{usr_prompt}\n\n{latest_research_dossier.dossier_text}"
+
+                # P5: the output contract lives at the TAIL of every prompt, so a blind
+                # `usr_prompt[:30000]` deleted it - the model then answered in free prose and
+                # the entire turn failed to parse. Truncate the evidence body from the middle
+                # and re-append the contract so it always survives and always occupies the
+                # recency-privileged final position.
+                usr_prompt = cls._fit_debater_prompt(usr_prompt, contract_tail, DEBATER_PROMPT_LIMIT)
 
                 messages = [
                     {"role": "system", "content": sys_prompt},
@@ -608,6 +882,8 @@ class DebateOrchestrator:
             # ==============================================================
             round_start_time = time.time()
             results: List[DebaterResponse] = []
+            last_heartbeat_save = time.time()
+            aborted_models: Set[str] = set()
             
             while True:
                 # 1. Check for pause condition
@@ -624,11 +900,22 @@ class DebateOrchestrator:
                 done_count = len(done_tasks)
                 total_count = len(model_tasks)
 
-                # 3. Super-Arbiter Auto-Abort Lagging Models Check (every 5 mins or after 120s if majority completed)
-                # If >=50% (and >=2 models) completed and elapsed > 120s:
-                if done_count >= max(2, int(total_count * 0.5)) and elapsed_round > 120.0:
+                # 3. Heartbeat save every 30s so mid-stream progress survives crashes
+                now = time.time()
+                if now - last_heartbeat_save >= 30.0:
+                    try:
+                        await SessionStorage.save_session(session)
+                    except Exception:
+                        pass
+                    last_heartbeat_save = now
+
+                # 4. Super-Arbiter Auto-Abort Lagging Models Check (after 10 minutes / 600s if majority completed)
+                # If >=50% (and >=1 for small fleets) completed and elapsed > 600.0s:
+                min_done = 1 if total_count <= 2 else max(2, int(total_count * 0.5))
+                if done_count >= min_done and elapsed_round > 600.0:
                     for m_id, task in list(model_tasks.items()):
-                        if not task.done():
+                        if not task.done() and m_id not in aborted_models:
+                            aborted_models.add(m_id)
                             task.cancel()
                             if session_id not in cls._quarantined_models:
                                 cls._quarantined_models[session_id] = set()
@@ -637,17 +924,18 @@ class DebateOrchestrator:
                             m_obj = next((x for x in session.models if x.id == m_id), None)
                             m_name = m_obj.name if m_obj else m_id
                             
-                            print(f"[👑 ARBITER AUTO-ABORT] Master Arbiter '{arbiter_config.name}' aborted lagging model '{m_name}' after {elapsed_round:.1f}s.")
+                            print(f"[ARBITER AUTO-ABORT] Master Arbiter '{arbiter_config.name}' aborted lagging model '{m_name}' after {elapsed_round:.1f}s.")
                             await cls.broadcast_event(session_id, "ARBITER_SUPERVISOR_ACTION", {
                                 "arbiter_model": arbiter_config.name,
                                 "action": "auto_abort_lagging_model",
                                 "target_model_id": m_id,
                                 "target_model_name": m_name,
-                                "reason": f"Model exceeded 120s response threshold while {done_count}/{total_count} fleet debaters completed.",
-                                "message": f"👑 Master Arbiter {arbiter_config.name}: Aborted lagging model '{m_name}' to maintain deliberation momentum."
+                                "reason": f"Model exceeded 600s (10 min) response threshold while {done_count}/{total_count} fleet debaters completed.",
+                                "message": f"👑 Master Arbiter {arbiter_config.name}: Aborted lagging model '{m_name}' after 10-minute timeout."
                             })
 
                 await asyncio.sleep(2.0)
+
 
             # Harvest results from tasks
             for m_id, task in model_tasks.items():
@@ -683,19 +971,22 @@ class DebateOrchestrator:
                     results.append(resp)
                 else:
                     resp = task.result()
-                    # Apply Auto-Healing if response was raw/unstructured
-                    if not resp.structured.architect_lens and not resp.structured.critic_lens and resp.raw_text:
+                    # Apply Auto-Healing if response was raw/unstructured. Checks all four
+                    # lenses so a legitimately single-lens Phase-1 pass is not re-parsed.
+                    _st = resp.structured
+                    if resp.raw_text and not (
+                        _st.architect_lens or _st.critic_lens
+                        or _st.field_hardware_lens or _st.security_compliance_lens
+                    ):
                         resp.structured = heal_unstructured_turn(resp.raw_text, resp.model_name, session.ministry_domain)
                     results.append(resp)
 
             for resp in results:
                 new_round.responses[resp.model_id] = resp
 
-            new_round.completed_at = time.time()
-            await SessionStorage.save_session(session)
-
             completed_responses = [r for r in results if r.status == "completed"]
             if not completed_responses:
+                session.rounds.pop()
                 cls._pause_flags[session_id].clear()
                 session.status = "paused"
                 await SessionStorage.save_session(session)
@@ -703,10 +994,25 @@ class DebateOrchestrator:
                     "round_number": current_round_num,
                     "message": "All models failed or timed out in this round."
                 })
+                await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "paused"})
                 break
 
-            # Arbiter evaluation for rounds (Phases 2, 3, 4)
-            if phase_index > 1:
+            new_round.completed_at = time.time()
+            strikes = cls._quarantine_strikes.setdefault(session_id, {})
+            for response in results:
+                if response.status == "completed":
+                    strikes.pop(response.model_id, None)
+                else:
+                    strikes[response.model_id] = strikes.get(response.model_id, 0) + 1
+                    if strikes[response.model_id] >= 2:
+                        cls._quarantined_models.setdefault(session_id, set()).add(response.model_id)
+                    elif response.model_id in aborted_models:
+                        cls._quarantined_models.get(session_id, set()).discard(response.model_id)
+            await SessionStorage.save_session(session)
+
+
+            # Arbiter evaluation for every completed pass.
+            if completed_responses:
                 await cls.broadcast_event(session_id, "ARBITER_EVALUATING", {"round_number": current_round_num})
                 
                 arbiter_eval = await evaluate_round_consensus(
@@ -735,6 +1041,7 @@ class DebateOrchestrator:
                     "round_number": current_round_num,
                     "pass_id": pass_id
                 })
+                await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "paused"})
                 break
 
             await asyncio.sleep(2)
@@ -746,16 +1053,16 @@ class DebateOrchestrator:
             final_md = await generate_final_markdown_report(
                 session=session,
                 arbiter_config=arbiter_config,
-                phase_title=session.session_title,
+                phase_title=session.workspace_phase_title or session.session_title,
                 phase_prompt=session.current_phase_prompt
             )
             
-            phase_slug = sanitize_folder_name(session.current_phase_title or f"Phase_{session.current_phase_index}")
-            filename = f"phase_{session.current_phase_index}_{phase_slug}.md"
+            phase_slug = sanitize_folder_name(session.workspace_phase_title or f"Phase_{session.workspace_phase_number}")
+            filename = f"phase_{session.workspace_phase_number}_{phase_slug}.md"
             phase_obj = WorkspacePhase(
-                phase_index=session.current_phase_index,
+                phase_index=session.workspace_phase_number,
                 prompt=session.current_phase_prompt or session.problem_statement,
-                phase_title=session.current_phase_title or "Sovereign SIH Master Consensus Deliverable",
+                phase_title=session.workspace_phase_title or "Sovereign SIH Master Consensus Deliverable",
                 verdict_filename=filename,
                 verdict_markdown=final_md
             )
@@ -767,7 +1074,7 @@ class DebateOrchestrator:
             await cls.broadcast_event(session_id, "DEBATE_COMPLETED", {
                 "final_markdown_report": final_md,
                 "total_rounds": len(session.rounds),
-                "phase_index": session.current_phase_index,
+                "phase_index": session.workspace_phase_number,
                 "phase_title": phase_obj.phase_title,
                 "filename": filename,
                 "workspace_folder": session.workspace_folder
@@ -777,29 +1084,57 @@ class DebateOrchestrator:
     async def pause_debate(cls, session_id: str):
         if session_id in cls._pause_flags:
             cls._pause_flags[session_id].clear()
+        await cls._cancel_active_tasks(session_id)
         session = await SessionStorage.get_session(session_id)
         if session:
+            if session.rounds and not session.rounds[-1].completed_at:
+                session.rounds.pop()
             session.status = "paused"
             await SessionStorage.save_session(session)
             await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "paused"})
 
     @classmethod
     async def resume_debate(cls, session_id: str, auto_advance: bool = True):
-        session = await SessionStorage.get_session(session_id)
-        if not session:
-            return
+        async with cls.control_lock(session_id):
+            await cls.ensure_stopped(session_id)
+            session = await SessionStorage.get_session(session_id)
+            if not session:
+                return
+            if session.status == "completed":
+                raise ValueError("Completed sessions require a follow-up phase")
 
-        if session_id not in cls._pause_flags:
-            cls._pause_flags[session_id] = asyncio.Event()
-        cls._pause_flags[session_id].set()
+            if session_id not in cls._pause_flags:
+                cls._pause_flags[session_id] = asyncio.Event()
+            cls._pause_flags[session_id].set()
 
-        session.status = "running"
-        await SessionStorage.save_session(session)
-        await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "running"})
+            session.status = "running"
+            await SessionStorage.save_session(session)
+            await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "running"})
+            cls.start_session(session_id, auto_advance=auto_advance)
 
-        if session_id not in cls._running_tasks or cls._running_tasks[session_id].done():
-            task = asyncio.create_task(cls.run_round_loop(session_id, auto_advance=auto_advance))
-            cls._running_tasks[session_id] = task
+    @classmethod
+    async def start_followup(cls, session_id: str, prompt: str, title: str, auto_advance: bool) -> DebateSession:
+        async with cls.control_lock(session_id):
+            await cls.ensure_stopped(session_id)
+            session = await SessionStorage.get_session(session_id)
+            if not session:
+                raise ValueError("Debate session not found")
+            if session.status not in {"paused", "completed"}:
+                raise ValueError("Only paused or completed sessions can start a follow-up")
+            session.workspace_phase_number += 1
+            session.workspace_phase_title = title
+            session.current_phase_index = 1
+            session.current_phase_title = "Phase 1: Multi-Persona Genesis"
+            session.current_pass_id = "1.1"
+            session.current_pass_title = "Pass 1.1: Lead Architect Genesis"
+            session.current_phase_prompt = prompt
+            session.final_markdown_report = None
+            session.latest_research_dossier = None
+            session.status = "running"
+            await SessionStorage.save_session(session)
+            await cls.broadcast_event(session_id, "DEBATE_STATUS_CHANGE", {"status": "running"})
+            cls.start_session(session_id, auto_advance=auto_advance)
+            return session
 
     @classmethod
     async def force_call_verdict(cls, session_id: str):
@@ -810,7 +1145,11 @@ class DebateOrchestrator:
         if session_id in cls._pause_flags:
             cls._pause_flags[session_id].clear()
 
-        arbiter_config = next((m for m in session.models if m.id == session.arbiter_model_id or m.is_arbiter), session.models[0])
+        await cls._cancel_active_tasks(session_id)
+        if session.rounds and not session.rounds[-1].completed_at:
+            session.rounds.pop()
+
+        arbiter_config = next((m for m in session.models if m.id == session.arbiter_model_id or m.is_arbiter), (session.models[0] if session.models else ModelConfig(id="arbiter", name="Supreme Arbiter", base_url="", api_key="", model_id="")))
         phase_title = "Sovereign SIH Master Consensus Deliverable"
         
         await cls.broadcast_event(session_id, "GENERATING_FINAL_VERDICT", {"forced_by_user": True})
@@ -823,7 +1162,7 @@ class DebateOrchestrator:
         
         filename = f"LATEST_CONSENSUS_VERDICT.md"
         phase_obj = WorkspacePhase(
-            phase_index=session.current_phase_index,
+            phase_index=session.workspace_phase_number,
             prompt=session.current_phase_prompt,
             phase_title=phase_title,
             verdict_filename=filename,
@@ -849,10 +1188,19 @@ class DebateOrchestrator:
 
     @classmethod
     async def update_and_retry_model(cls, session_id: str, updated_config: ModelConfig):
+        await cls.ensure_stopped(session_id)
         session = await SessionStorage.get_session(session_id)
         if not session:
-            return
+            raise ValueError("Debate session not found")
 
+        existing = next((model for model in session.models if model.id == updated_config.id), None)
+        if not existing:
+            raise ValueError(f"Unknown model ID: {updated_config.id}")
+        if not updated_config.api_key:
+            updated_config = updated_config.model_copy(update={
+                "api_key": existing.api_key,
+                "backup_api_keys": updated_config.backup_api_keys or existing.backup_api_keys,
+            })
         for i, m in enumerate(session.models):
             if m.id == updated_config.id:
                 session.models[i] = updated_config
@@ -866,6 +1214,11 @@ class DebateOrchestrator:
             "model_id": updated_config.id,
             "model_name": updated_config.name
         })
+        if session.rounds and session.rounds[-1].pass_or_round_id == session.current_pass_id:
+            session.rounds.pop()
+        session.status = "paused"
+        await SessionStorage.save_session(session)
+        await cls.resume_debate(session_id, auto_advance=True)
 
     @classmethod
     async def drop_model(cls, session_id: str, model_id: str, reason: str = "Excluded by user/moderator"):
@@ -892,25 +1245,61 @@ class DebateOrchestrator:
             "reason": reason
         })
 
+    @classmethod
+    async def enable_model(cls, session_id: str, model_id: str):
+        session = await SessionStorage.get_session(session_id)
+        if not session:
+            raise ValueError("Debate session not found")
+        model = next((item for item in session.models if item.id == model_id), None)
+        if not model:
+            raise ValueError(f"Unknown model ID: {model_id}")
+        model.enabled = True
+        cls._quarantined_models.get(session_id, set()).discard(model_id)
+        cls._quarantine_strikes.get(session_id, {}).pop(model_id, None)
+        await SessionStorage.save_session(session)
+        await cls.broadcast_event(session_id, "MODEL_ENABLED", {"model_id": model_id})
+
+    @classmethod
+    async def stop_and_delete(cls, session_id: str) -> bool:
+        await cls._cancel_active_tasks(session_id)
+        cls._running_tasks.pop(session_id, None)
+        await cls.broadcast_event(session_id, "SESSION_DELETED", {"session_id": session_id})
+        cls.cleanup_session(session_id, remove_subscribers=True)
+        return await SessionStorage.delete_session(session_id)
 
     @classmethod
     async def execute_arbiter_command(cls, session_id: str, command_text: str) -> dict:
         """
-        Interactive Command Console for GPT 5.6 Sol Master Arbiter.
-        Interprets natural language instructions from the user, executes tools on the live session,
-        and returns an intelligent reasoning report.
+        Deterministic moderator command interpreter.
+
+        P19: this is pure keyword matching over the live session - no LLM is consulted at any
+        point - yet every reply used to be signed "Master Arbiter (<model name>)", which made a
+        regex look like the judge model reasoning about the fleet. It is now labelled as the
+        engine it is. The arbiter model's name is still reported separately as the model the
+        actions apply to.
         """
         session = await SessionStorage.get_session(session_id)
         if not session:
             return {"status": "error", "message": "Debate session not found."}
 
-        arbiter_config = next((m for m in session.models if m.id == session.arbiter_model_id or m.is_arbiter), session.models[0])
+        arbiter_config = next((m for m in session.models if m.id == session.arbiter_model_id or m.is_arbiter), (session.models[0] if session.models else ModelConfig(id="arbiter", name="Supreme Arbiter", base_url="", api_key="", model_id="")))
         cmd_lower = command_text.lower()
         actions_taken = []
         explanation_parts = []
 
+        is_abort_cmd = bool(re.search(r"\b(abort|kill|cancel\s+tasks?|stop\s+turns?|stuck|hang)\b", cmd_lower))
+        is_enable_cmd = bool(re.search(r"\b(turn\s+on|enable|re-?enable|retry|bring\s+back|restore|include|reinstate|unquarantine)\b", cmd_lower))
+        # P19: "retry the dropped model" matched BOTH patterns and disable was evaluated first,
+        # so the command did the exact opposite of what it said. Enable now wins the tie,
+        # because a restore instruction is never a request to remove.
+        is_disable_cmd = (not is_enable_cmd) and bool(
+            re.search(r"\b(turn\s+off|disable|exclude|drop|remove|eject|kick)\b", cmd_lower)
+        )
+        is_verdict_cmd = bool(re.search(r"\b(force\s+verdict|call\s+verdict|finalize\s+verdict|synthesize\s+now|generate\s+final\s+verdict|finish\s+debate|end\s+debate)\b", cmd_lower))
+        is_heal_cmd = bool(re.search(r"\b(heal|format|convert|repair|fix\s+format)\b", cmd_lower))
+
         # 1. Action: Abort/Kill Lagging Models
-        if any(w in cmd_lower for w in ["abort", "kill", "cancel", "stop", "stuck", "hang", "timeout"]):
+        if is_abort_cmd:
             if session_id in cls._running_round_tasks:
                 for m_id, task in list(cls._running_round_tasks[session_id].items()):
                     if not task.done():
@@ -921,43 +1310,61 @@ class DebateOrchestrator:
                         if session_id not in cls._quarantined_models:
                             cls._quarantined_models[session_id] = set()
                         cls._quarantined_models[session_id].add(m_id)
-                explanation_parts.append("I have terminated all lagging background worker tasks and quarantined uncooperative models.")
+                explanation_parts.append("Terminated the lagging background worker tasks and quarantined the unresponsive models.")
 
-        # 2. Action: Exclude / Turn Off Specific Model
+        # 2. Action: Exclude / Turn Off or Enable Specific Model
         for m in session.models:
             if m.name.lower() in cmd_lower or m.id.lower() in cmd_lower:
-                if any(w in cmd_lower for w in ["off", "exclude", "drop", "disable", "remove"]):
-                    await cls.drop_model(session_id, m.id, reason="Excluded by Arbiter command")
-                    actions_taken.append(f"Excluded '{m.name}' ({m.id}) from future debate rounds")
-                elif any(w in cmd_lower for w in ["on", "enable", "retry", "bring back", "include"]):
+                if is_enable_cmd:
                     m.enabled = True
                     if session_id in cls._quarantined_models and m.id in cls._quarantined_models[session_id]:
                         cls._quarantined_models[session_id].remove(m.id)
+                    cls._quarantine_strikes.get(session_id, {}).pop(m.id, None)
+                    await SessionStorage.save_session(session)
                     actions_taken.append(f"Re-enabled and unquarantined '{m.name}' ({m.id})")
+                elif is_disable_cmd:
+                    await cls.drop_model(session_id, m.id, reason="Excluded by moderator command")
+                    actions_taken.append(f"Excluded '{m.name}' ({m.id}) from future debate rounds")
 
         # 3. Action: Force Advance / Call Verdict
-        if any(w in cmd_lower for w in ["verdict", "final", "complete", "finish", "synthesize now"]):
+        if is_verdict_cmd:
             await cls.force_call_verdict(session_id)
             actions_taken.append("Synthesized Final Sovereign Consensus Verdict immediately")
-            explanation_parts.append("I have summoned the jury and synthesized the final sovereign markdown deliverables.")
+            explanation_parts.append("Summoned the arbiter and synthesized the final sovereign markdown deliverable.")
 
         # 4. Action: Auto-Heal Unstructured Outputs
-        if any(w in cmd_lower for w in ["heal", "format", "convert", "repair", "fix format"]):
+        if is_heal_cmd:
             if session.rounds:
                 healed_count = 0
                 for resp in session.rounds[-1].responses.values():
-                    if resp.raw_text and not resp.structured.architect_lens:
+                    _st = resp.structured
+                    if resp.raw_text and not (
+                        _st.architect_lens or _st.critic_lens
+                        or _st.field_hardware_lens or _st.security_compliance_lens
+                    ):
                         resp.structured = heal_unstructured_turn(resp.raw_text, resp.model_name, session.ministry_domain)
                         healed_count += 1
                 await SessionStorage.save_session(session)
-                actions_taken.append(f"Auto-healed {healed_count} debater responses into structured schema")
-                explanation_parts.append(f"Successfully recovered and parsed {healed_count} unformatted model turns.")
+                actions_taken.append(f"Recovered {healed_count} unstructured debater response(s) into the schema")
+                explanation_parts.append(
+                    f"Recovered content from {healed_count} unformatted turn(s). Note: recovery restores text only - "
+                    "a consensus vote that was never stated stays unset and is excluded from the score rather than guessed."
+                )
 
-        # 5. Build Final Arbiter Response
+        # 5. Build Final Response
+        engine_label = "⚙️ **System Moderator Engine** (direct execution - no model was queried)"
         if not actions_taken:
-            explanation = f"👑 **Master Arbiter ({arbiter_config.name})**: I have received your directive: *\"{command_text}\"*. All active debater nodes are synchronized. You can ask me to abort failing models, re-enable specific models on backup keys, auto-heal unformatted responses, or force the final consensus verdict."
+            explanation = (
+                f"{engine_label}\n\nDirective received: *\"{command_text}\"* - no matching action pattern, so nothing was changed.\n\n"
+                f"Recognised commands: abort stuck turns, enable/re-enable <model>, disable/drop <model>, "
+                f"heal unformatted responses, force the final verdict.\n\n"
+                f"Current arbiter model for this session: **{arbiter_config.name}**."
+            )
         else:
-            explanation = f"👑 **Master Arbiter ({arbiter_config.name}) Action Report**:\n\n" + "\n".join([f"- ✅ {a}" for a in actions_taken]) + "\n\n" + " ".join(explanation_parts)
+            explanation = (
+                f"{engine_label}\n\n" + "\n".join([f"- ✅ {a}" for a in actions_taken])
+                + ("\n\n" + " ".join(explanation_parts) if explanation_parts else "")
+            )
 
         await cls.broadcast_event(session_id, "ARBITER_SUPERVISOR_ACTION", {
             "arbiter_model": arbiter_config.name,

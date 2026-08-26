@@ -8,15 +8,20 @@ class ModelConfig(BaseModel):
     name: str  # Display name e.g., "Claude 3.5 Sonnet", "DeepSeek R1"
     base_url: str  # Custom Base URL
     api_key: str = ""  # Primary API Key
+    credential_ref: Optional[str] = None
     backup_api_keys: List[str] = Field(default_factory=list)  # List of backup API keys
     model_id: str  # Model ID string
     fallback_model_ids: List[str] = Field(default_factory=list)  # Optional fallback model IDs to pool message quotas
-    provider_type: Literal["openai_compatible", "gemini_native"] = "openai_compatible"
+    provider_type: Literal["openai_compatible"] = "openai_compatible"
     timeout_seconds: int = 600  # Default 10 minutes
+    max_tokens: int = Field(default=8192, ge=1, le=65536)
     is_arbiter: bool = False
     is_backup_arbiter: bool = False
     enabled: bool = True
     temperature: float = 0.7
+    # Provider-native structured output. "auto" = probe cloud endpoints once and remember;
+    # "json_object" = always send response_format; "off" = never send it (local Ollama / strict proxies).
+    json_mode: Literal["auto", "json_object", "off"] = "auto"
 
 class CritiqueItem(BaseModel):
     target_model_id: str = ""
@@ -45,14 +50,21 @@ class StructuredDebateTurn(BaseModel):
     security_compliance_lens: str = ""
     security_reliability_lens: str = ""
     critiques: List[CritiqueItem] = Field(default_factory=list)
+    # Phase-1 self red-teaming. Kept separate from `critiques` so self-attacks are never
+    # routed to a peer model as if they were peer critiques.
+    self_identified_flaws: List[str] = Field(default_factory=list)
     concessions_and_defenses: List[ConcessionItem] = Field(default_factory=list)
     refined_solution: str = ""
     positives_of_approach: List[str] = Field(default_factory=list)
     negatives_and_risks: List[str] = Field(default_factory=list)
     autonomous_research_calls: List[AutonomousResearchCall] = Field(default_factory=list)
     research_queries_for_next_round: List[str] = Field(default_factory=list)
-    consensus_vote: Literal["AGREE", "DISAGREE", "NEEDS_REFINEMENT"] = "DISAGREE"
-    agreement_percentage: int = 50
+    # None means "the model did not state a position we could read".
+    # NEVER substitute a default here: a fabricated vote contaminates the consensus metric.
+    consensus_vote: Optional[Literal["AGREE", "DISAGREE", "NEEDS_REFINEMENT"]] = None
+    agreement_percentage: Optional[int] = None
+    # False when the JSON contract could not be honoured and content was recovered heuristically.
+    parse_ok: bool = True
 
 class DebaterResponse(BaseModel):
     model_id: str
@@ -66,7 +78,6 @@ class DebaterResponse(BaseModel):
     status: Literal["streaming", "completed", "timeout", "error", "quarantined"] = "completed"
     elapsed_seconds: float = 0.0
     error_message: Optional[str] = None
-    active_key_used: Optional[str] = None
 
 class FrictionPoint(BaseModel):
     issue: str
@@ -106,10 +117,12 @@ class PooledResearchDossier(BaseModel):
     dossier_text: str = ""
     web_summary: str = ""
     total_sources: int = 0
+    rendered_sources: int = 0
     downloaded_papers_count: int = 0
 
 class RoundData(BaseModel):
-    round_number: int
+    round_number: int = 1
+    workspace_phase_number: int = 1
     phase_index: int = 1
     phase_title: str = "Phase 1: Multi-Persona Genesis"
     pass_or_round_id: str = "1.1"
@@ -137,11 +150,16 @@ class DebateSession(BaseModel):
     problem_statement: str
     additional_prompt: Optional[str] = None
     ministry_domain: str = "Smart India Hackathon (General)"
+    # One of "software_cloud" | "hardware_iot" | "hybrid_cyberphysical".
+    # Classified once at session start; selects the lens set and deliverable section spec.
+    problem_domain: Optional[str] = None
     models: List[ModelConfig]
     arbiter_model_id: str
     backup_arbiter_model_id: Optional[str] = None
     phases: List[WorkspacePhase] = Field(default_factory=list)
     current_phase_index: int = 1
+    workspace_phase_number: int = 1
+    workspace_phase_title: str = "Initial Solution"
     current_phase_title: str = "Phase 1: Multi-Persona Genesis"
     current_pass_id: str = "1.1"
     current_pass_title: str = "Pass 1.1: Lead Architect Genesis"
@@ -151,6 +169,8 @@ class DebateSession(BaseModel):
     current_round_num: int = 0
     final_markdown_report: Optional[str] = None
     latest_research_dossier: Optional[PooledResearchDossier] = None
+    completed_research_steps: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
     created_at: float = Field(default_factory=time.time)
 
 class StartDebateRequest(BaseModel):
@@ -170,15 +190,25 @@ class FollowUpDebateRequest(BaseModel):
     auto_advance: bool = True
 
 class ModeratorActionRequest(BaseModel):
-    action: Literal["pause", "resume", "call_verdict", "next_round", "inject_prompt", "update_model_and_retry", "drop_model"]
+    action: Literal["pause", "resume", "call_verdict", "inject_prompt", "update_model_and_retry", "drop_model", "enable_model"]
     injection_text: Optional[str] = None
     ai_model_config: Optional[ModelConfig] = None
     target_model_id: Optional[str] = None
 
 class ModelTestRequest(BaseModel):
+    config_id: Optional[str] = None
     base_url: str
     api_key: str = ""
     backup_api_keys: List[str] = Field(default_factory=list)
     model_id: str
-    provider_type: Literal["openai_compatible", "gemini_native"] = "openai_compatible"
+    provider_type: Literal["openai_compatible"] = "openai_compatible"
     timeout_seconds: int = 30
+
+class ResearchConfig(BaseModel):
+    enabled: bool = True
+    tavily_api_key: str = ""
+    openalex_email: str = ""
+    max_papers_per_round: int = Field(default=12, ge=1, le=50)
+    max_web_sources_per_round: int = Field(default=8, ge=1, le=50)
+    max_pdf_bytes: int = Field(default=15 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+    download_pdfs: bool = True

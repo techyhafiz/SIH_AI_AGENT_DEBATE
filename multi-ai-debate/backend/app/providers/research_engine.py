@@ -6,7 +6,9 @@ import httpx
 import xml.etree.ElementTree as ET
 import urllib.parse
 from typing import Dict, List, Optional, Any, Tuple
-from app.schemas import PooledResearchDossier, ResearchDossierItem, AutonomousResearchCall
+from app.schemas import PooledResearchDossier, ResearchDossierItem, AutonomousResearchCall, ResearchConfig
+from app.storage import PersistenceError
+from app.providers.http_transport import build_async_client
 
 try:
     from pypdf import PdfReader
@@ -19,10 +21,11 @@ RESEARCH_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data
 class ResearchEngine:
     DEFAULT_CONFIG = {
         "enabled": True,
-        "tavily_api_key": "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",
-        "openalex_email": "campusprintexpress@gmail.com",
+        "tavily_api_key": os.getenv("TAVILY_API_KEY", ""),
+        "openalex_email": os.getenv("OPENALEX_EMAIL", ""),
         "max_papers_per_round": 12,
         "max_web_sources_per_round": 8,
+        "max_pdf_bytes": 15 * 1024 * 1024,
         "download_pdfs": True
     }
 
@@ -32,28 +35,36 @@ class ResearchEngine:
             try:
                 with open(RESEARCH_CONFIG_PATH, "r", encoding="utf-8") as f:
                     cfg = json.load(f)
-                    return {**cls.DEFAULT_CONFIG, **cfg}
-            except Exception:
-                pass
-        return cls.DEFAULT_CONFIG.copy()
+                    return ResearchConfig(**{**cls.DEFAULT_CONFIG, **cfg}).model_dump()
+            except Exception as exc:
+                raise PersistenceError(f"Could not load research configuration: {exc}") from exc
+        return ResearchConfig(**cls.DEFAULT_CONFIG).model_dump()
 
     @classmethod
     def save_config(cls, cfg: Dict[str, Any]):
         os.makedirs(os.path.dirname(RESEARCH_CONFIG_PATH), exist_ok=True)
+        curr = cls.get_config()
+        merged = ResearchConfig(**{**curr, **cfg}).model_dump()
+        tmp_path = f"{RESEARCH_CONFIG_PATH}.tmp"
         try:
-            curr = cls.get_config()
-            merged = {**curr, **cfg}
-            with open(RESEARCH_CONFIG_PATH, "w", encoding="utf-8") as f:
-                json.dump(merged, f, indent=2)
-        except Exception as e:
-            print(f"Error saving research_config.json: {e}")
+            with open(tmp_path, "w", encoding="utf-8") as handle:
+                json.dump(merged, handle, indent=2)
+            os.replace(tmp_path, RESEARCH_CONFIG_PATH)
+        except Exception as exc:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            raise PersistenceError(f"Could not save research configuration: {exc}") from exc
 
     @classmethod
     async def search_tavily(cls, query: str, api_key: Optional[str] = None, max_results: int = 4) -> Dict[str, Any]:
         cfg = cls.get_config()
-        key = api_key or cfg.get("tavily_api_key", "").strip()
+        key = (api_key or cfg.get("tavily_api_key") or "").strip()
         if not key or not query.strip():
-            return {"answer": "", "results": []}
+            return {"status": "not_configured", "answer": "", "results": []}
+
 
         url = "https://api.tavily.com/search"
         payload = {
@@ -64,24 +75,25 @@ class ResearchEngine:
             "max_results": max_results
         }
         try:
-            async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            async with build_async_client(timeout=10.0) as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
                     return {
+                        "status": "ok",
                         "answer": data.get("answer", ""),
                         "results": [
                             {
-                                "title": r.get("title", ""),
-                                "url": r.get("url", ""),
-                                "content": r.get("content", "")[:350]
+                                "title": str(r.get("title") or ""),
+                                "url": str(r.get("url") or ""),
+                                "content": str(r.get("content") or "")[:350]
                             }
-                            for r in data.get("results", [])
+                            for r in (data.get("results") or []) if isinstance(r, dict)
                         ]
                     }
         except Exception as e:
             print(f"Tavily search error for '{query}': {e}")
-        return {"answer": "", "results": []}
+        return {"status": "error", "answer": "", "results": []}
 
     @classmethod
     async def search_openalex(cls, query: str, max_results: int = 5, email: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -93,7 +105,7 @@ class ResearchEngine:
         url = f"https://api.openalex.org/works?search={clean_q}&per-page={max_results}&mailto={user_email}"
         headers = {"User-Agent": f"mailto:{user_email}"}
         try:
-            async with httpx.AsyncClient(timeout=9.0, verify=False) as client:
+            async with build_async_client(timeout=9.0) as client:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -113,13 +125,13 @@ class ResearchEngine:
                             abstract_text = " ".join([w[1] for w in word_positions])[:350]
 
                         papers.append({
-                            "title": item.get("display_name", ""),
+                            "title": item.get("display_name") or "",
                             "year": item.get("publication_year", ""),
                             "citations": item.get("cited_by_count", 0),
                             "pdf_url": pdf_url,
                             "doi": item.get("doi", ""),
                             "summary": abstract_text or f"Academic publication indexed with {item.get('cited_by_count', 0)} citations.",
-                            "concepts": [c.get("display_name") for c in item.get("concepts", [])[:3] if c.get("display_name")]
+                            "concepts": [c.get("display_name") for c in (item.get("concepts") or [])[:3] if isinstance(c, dict) and c.get("display_name")]
                         })
                     return papers
         except Exception as e:
@@ -131,10 +143,10 @@ class ResearchEngine:
         if not query.strip():
             return []
         clean_q = urllib.parse.quote_plus(query[:60])
-        url = f"http://export.arxiv.org/api/query?search_query=all:{clean_q}&start=0&max_results={max_results}"
+        url = f"https://export.arxiv.org/api/query?search_query=all:{clean_q}&start=0&max_results={max_results}"
         headers = {"User-Agent": "Mozilla/5.0"}
         try:
-            async with httpx.AsyncClient(timeout=9.0, verify=False) as client:
+            async with build_async_client(timeout=9.0) as client:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code == 200:
                     root = ET.fromstring(resp.text)
@@ -168,41 +180,63 @@ class ResearchEngine:
             return None, None, ""
 
         os.makedirs(save_dir, exist_ok=True)
+        cfg = cls.get_config()
+        max_bytes = int(cfg.get("max_pdf_bytes", 15 * 1024 * 1024))
         pdf_path = os.path.join(save_dir, f"{filename_stem}.pdf")
         txt_path = os.path.join(save_dir, f"{filename_stem}.txt")
+        tmp_pdf_path = f"{pdf_path}.tmp"
 
         try:
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, verify=False) as client:
+            async with build_async_client(timeout=15.0, follow_redirects=True) as client:
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                resp = await client.get(pdf_url, headers=headers)
-                if resp.status_code == 200 and len(resp.content) > 1000:
-                    with open(pdf_path, "wb") as f:
-                        f.write(resp.content)
+                async with client.stream("GET", pdf_url, headers=headers) as resp:
+                    content_type = (resp.headers.get("content-type") or "").lower()
+                    content_length = int(resp.headers.get("content-length", "0") or 0)
+                    if resp.status_code != 200 or "pdf" not in content_type or (content_length and content_length > max_bytes):
+                        return None, None, ""
+                    total = 0
+                    first_chunk = b""
+                    with open(tmp_pdf_path, "wb") as handle:
+                        async for chunk in resp.aiter_bytes(64 * 1024):
+                            if not first_chunk:
+                                first_chunk = chunk[:5]
+                            total += len(chunk)
+                            if total > max_bytes:
+                                raise ValueError("PDF exceeds configured size limit")
+                            handle.write(chunk)
+                    if not first_chunk.startswith(b"%PDF-"):
+                        os.remove(tmp_pdf_path)
+                        return None, None, ""
+                os.replace(tmp_pdf_path, pdf_path)
 
-                    extracted_text = ""
-                    if PYPDF_AVAILABLE:
-                        try:
-                            reader = PdfReader(pdf_path)
-                            pages_text = []
-                            for p_idx in range(min(5, len(reader.pages))):
-                                page_text = reader.pages[p_idx].extract_text()
-                                if page_text:
-                                    pages_text.append(page_text)
-                            extracted_text = "\n\n".join(pages_text)
-                        except Exception as parse_err:
-                            extracted_text = f"PDF downloaded but parsing encountered: {parse_err}"
-                    else:
-                        extracted_text = "PDF downloaded (pypdf not available for local parsing)."
+                extracted_text = ""
+                if PYPDF_AVAILABLE:
+                    try:
+                        reader = PdfReader(pdf_path)
+                        pages_text = []
+                        for p_idx in range(min(5, len(reader.pages))):
+                            page_text = reader.pages[p_idx].extract_text()
+                            if page_text:
+                                pages_text.append(page_text)
+                        extracted_text = "\n\n".join(pages_text)
+                    except Exception:
+                        extracted_text = ""
+                else:
+                    extracted_text = "PDF downloaded (pypdf not available for local parsing)."
 
-                    # Save full text to txt file
-                    with open(txt_path, "w", encoding="utf-8") as f:
-                        f.write(extracted_text)
+                with open(txt_path, "w", encoding="utf-8") as handle:
+                    handle.write(extracted_text)
 
-                    # Return capsule (first 500 chars clean text)
-                    capsule = re.sub(r'\s+', ' ', extracted_text[:500]).strip()
-                    return pdf_path, txt_path, capsule
+                capsule = re.sub(r'\s+', ' ', extracted_text[:500]).strip()
+                return os.path.basename(pdf_path), os.path.basename(txt_path), capsule
         except Exception as e:
             print(f"Failed to download/parse PDF from {pdf_url}: {e}")
+            for path in (tmp_pdf_path, pdf_path, txt_path):
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except OSError:
+                    pass
 
         return None, None, ""
 
@@ -279,15 +313,15 @@ class ResearchEngine:
         for res in stage_1_results:
             if isinstance(res, dict):
                 for r in res.get("results", []):
-                    u = r.get("url", "")
+                    u = str(r.get("url") or "") if isinstance(r, dict) else ""
                     if u and u not in seen_urls:
                         seen_urls.add(u)
                         stage_1_items.append(ResearchDossierItem(
                             tag=f"Fact-Check {s1_counter}",
-                            title=r.get("title", ""),
+                            title=str(r.get("title") or ""),
                             url=u,
                             type="Web",
-                            summary=r.get("content", "")[:320]
+                            summary=str(r.get("content") or "")[:320]
                         ))
                         s1_counter += 1
 
@@ -304,7 +338,9 @@ class ResearchEngine:
         for group in stage_2_raw:
             if isinstance(group, list):
                 for p in group:
-                    t = p.get("title", "").strip()
+                    if not isinstance(p, dict):
+                        continue
+                    t = str(p.get("title") or "").strip()
                     t_low = t.lower()
                     if t and t_low not in seen_titles:
                         seen_titles.add(t_low)
@@ -322,6 +358,8 @@ class ResearchEngine:
                             citations=p.get("citations"),
                             summary=p.get("summary", "")
                         )
+                        if len(stage_2_items) >= int(cfg.get("max_papers_per_round", 12)):
+                            continue
                         stage_2_items.append(item)
                         s2_counter += 1
 
@@ -354,17 +392,22 @@ class ResearchEngine:
         for res in stage_3_results:
             if isinstance(res, dict):
                 for r in res.get("results", []):
-                    u = r.get("url", "")
+                    u = str(r.get("url") or "") if isinstance(r, dict) else ""
                     if u and u not in seen_urls:
                         seen_urls.add(u)
                         stage_3_items.append(ResearchDossierItem(
                             tag=f"Feasibility {s3_counter}",
-                            title=r.get("title", ""),
+                            title=str(r.get("title") or ""),
                             url=u,
                             type="Web",
-                            summary=r.get("content", "")[:320]
+                            summary=str(r.get("content") or "")[:320]
                         ))
                         s3_counter += 1
+
+        max_web = int(cfg.get("max_web_sources_per_round", 8))
+        if len(stage_1_items) + len(stage_3_items) > max_web:
+            stage_1_items = stage_1_items[:max_web]
+            stage_3_items = stage_3_items[:max(0, max_web - len(stage_1_items))]
 
         # --- COMPILE 3-STAGE POOLED RESEARCH INTELLIGENCE DOSSIER ---
         dossier_lines = [
@@ -402,6 +445,7 @@ class ResearchEngine:
 
         dossier_text = "\n".join(dossier_lines)
         total_sources = len(stage_1_items) + len(stage_2_items) + len(stage_3_items)
+        rendered_sources = min(4, len(stage_1_items)) + min(6, len(stage_2_items)) + min(4, len(stage_3_items))
 
         return PooledResearchDossier(
             round_num=round_num,
@@ -412,6 +456,7 @@ class ResearchEngine:
             dossier_text=dossier_text,
             web_summary=stage_1_items[0].summary if stage_1_items else "",
             total_sources=total_sources,
+            rendered_sources=rendered_sources,
             downloaded_papers_count=downloaded_count
         )
 
@@ -460,4 +505,3 @@ class ResearchEngine:
             "total_sources": dossier.total_sources,
             "downloaded_papers_count": dossier.downloaded_papers_count
         }
-
